@@ -31,30 +31,151 @@ const LAYOUTS = [
   { id: "bento",    label: "Bento",             icon: "⊞",  cols: 0, split: null },
 ];
 
-// ─── BENTO LAYOUTS by photo count ────────────────────────────────────────────
-// Returns array of {gridColumn, gridRow} CSS values
-function getBentoAreas(n) {
-  // Each layout defined as css grid-area strings [col-start/row-start/col-end/row-end]
-  const layouts = {
-    1: [["1/1/3/3"]],
-    2: [["1/1/2/3"],["2/1/3/3"]],
-    3: [["1/1/3/2"],["1/2/2/3"],["2/2/3/3"]],
-    4: [["1/1/2/2"],["2/1/3/2"],["1/2/2/3"],["2/2/3/3"]],
-    5: [["1/1/3/2"],["1/2/2/3"],["2/2/3/3"],["3/1/4/2"],["3/2/4/3"]],
-    6: [["1/1/2/2"],["2/1/3/2"],["3/1/4/2"],["1/2/2/3"],["2/2/3/3"],["3/2/4/3"]],
-    7: [["1/1/3/2"],["3/1/4/2"],["4/1/5/2"],["1/2/2/3"],["2/2/3/3"],["3/2/4/3"],["4/2/5/3"]],
-    8: [["1/1/2/2"],["2/1/3/2"],["3/1/5/2"],["1/2/3/3"],["3/2/4/3"],["4/2/5/3"],["5/1/6/2"],["5/2/6/3"]],
-  };
-  const n2 = Math.min(n, 8);
-  return (layouts[n2] || layouts[4]).map(a => ({ gridArea: a[0] }));
-}
+// ─── BENTO LAYOUT ENGINE ─────────────────────────────────────────────────────
+// Real bento: cells have variable spans — some big (2×2, 2×1, 1×2), some small (1×1)
+// No photo limit: for n > 8, we generate rows of 4 with a rhythmic big/small pattern
+// Returns { gridTemplateColumns, gridTemplateRows, cellAreas[] }
+// Each cellArea: { gridColumn, gridRow }
 
-function getBentoGridTemplate(n) {
-  const n2 = Math.min(n, 8);
-  if (n2 <= 2) return { cols: `repeat(2, 1fr)`, rows: `repeat(2, 1fr)` };
-  if (n2 <= 4) return { cols: `repeat(2, 1fr)`, rows: `repeat(2, 1fr)` };
-  if (n2 <= 6) return { cols: `repeat(3, 1fr)`, rows: `repeat(2, 1fr)` };
-  return { cols: `repeat(${n2 <= 7 ? 4 : 5}fr, 1fr)`, rows: `repeat(2, 1fr)` };
+function buildBentoLayout(n) {
+  if (n === 0) return { cols: "1fr", rows: "200px", cells: [] };
+
+  const GAP = 8; // visual only, not in calc
+  // Fixed templates for small counts (hand-crafted for best look)
+  const TEMPLATES = {
+    1: {
+      cols: "1fr",
+      rows: "1fr",
+      cells: [{ col:"1/2", row:"1/2" }],
+    },
+    2: {
+      cols: "3fr 2fr",
+      rows: "1fr",
+      cells: [{ col:"1/2", row:"1/2" }, { col:"2/3", row:"1/2" }],
+    },
+    3: {
+      cols: "2fr 1fr",
+      rows: "1fr 1fr",
+      cells: [{ col:"1/2", row:"1/3" }, { col:"2/3", row:"1/2" }, { col:"2/3", row:"2/3" }],
+    },
+    4: {
+      cols: "2fr 1fr 1fr",
+      rows: "1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/3" },
+        { col:"2/3", row:"1/2" }, { col:"3/4", row:"1/2" },
+        { col:"2/4", row:"2/3" },
+      ],
+    },
+    5: {
+      cols: "2fr 1fr 1fr",
+      rows: "1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/3" },
+        { col:"2/3", row:"1/2" }, { col:"3/4", row:"1/2" },
+        { col:"2/3", row:"2/3" }, { col:"3/4", row:"2/3" },
+      ],
+    },
+    6: {
+      cols: "1fr 2fr 1fr",
+      rows: "1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/2" }, { col:"2/3", row:"1/3" }, { col:"3/4", row:"1/2" },
+        { col:"1/2", row:"2/3" },                           { col:"3/4", row:"2/3" },
+        { col:"2/3", row:"2/3" },
+      ],
+    },
+    7: {
+      cols: "1fr 1fr 2fr",
+      rows: "1fr 1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/2" }, { col:"2/3", row:"1/2" }, { col:"3/4", row:"1/3" },
+        { col:"1/2", row:"2/3" }, { col:"2/3", row:"2/3" },
+        { col:"1/3", row:"3/4" },                           { col:"3/4", row:"3/4" },
+      ],
+    },
+    8: {
+      cols: "1fr 2fr 1fr",
+      rows: "1fr 1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/2" }, { col:"2/3", row:"1/3" }, { col:"3/4", row:"1/2" },
+        { col:"1/2", row:"2/3" },                           { col:"3/4", row:"2/3" },
+        { col:"1/2", row:"3/4" }, { col:"2/3", row:"3/4" }, { col:"3/4", row:"3/4" },
+      ],
+    },
+    9: {
+      cols: "1fr 1fr 1fr",
+      rows: "2fr 1fr 1fr",
+      cells: [
+        { col:"1/2", row:"1/2" }, { col:"2/3", row:"1/2" }, { col:"3/4", row:"1/2" },
+        { col:"1/2", row:"2/3" }, { col:"2/4", row:"2/3" },
+        { col:"1/3", row:"3/4" },                           { col:"3/4", row:"3/4" },
+        { col:"2/3", row:"3/4" },
+        // reflow 9th
+        { col:"1/2", row:"2/3" },
+      ],
+    },
+  };
+
+  if (n <= 9 && TEMPLATES[n]) {
+    const t = TEMPLATES[n];
+    return { cols: t.cols, rows: t.rows, cells: t.cells };
+  }
+
+  // For n > 9: generate rows of 3 columns, with a repeating bento rhythm
+  // Rhythm per row-group of 3:
+  // Pattern A: [big(2col×1row), small, small] + [small, small, small]  = 5 photos in 2 rows
+  // We cycle this 3-col grid with big items every 5th slot
+  const NCOLS = 3;
+  // Build a flat list of cell sizes: 0=small(1×1), 1=wide(2×1), 2=tall(1×2)
+  // Pattern: W S / S S S / T S S / S T S ...
+  const cells = [];
+  let row = 1;
+  let colCursor = 1; // 1-indexed current column position
+  let usedInRow = 0;
+
+  const rowHeight = "160px";
+  let maxRow = 1;
+
+  // Simple approach: fill 3-col grid densely with occasional big cells
+  // Big cell every 5 items: spans 2 cols (wide)
+  let placed = 0;
+  // Track a 2D occupied map
+  const occupied = {}; // key: "col,row"
+  const mark = (c, r, w, h) => {
+    for (let dc = 0; dc < w; dc++)
+      for (let dr = 0; dr < h; dr++)
+        occupied[`${c+dc},${r+dr}`] = true;
+  };
+  const isFree = (c, r, w, h) => {
+    for (let dc = 0; dc < w; dc++)
+      for (let dr = 0; dr < h; dr++)
+        if (occupied[`${c+dc},${r+dr}`]) return false;
+    return true;
+  };
+  const findFree = (w, h) => {
+    for (let r = 1; r <= 100; r++)
+      for (let c = 1; c <= NCOLS - w + 1; c++)
+        if (isFree(c, r, w, h)) return { c, r };
+    return { c: 1, r: 1 };
+  };
+
+  for (let i = 0; i < n; i++) {
+    // Every ~4th cell becomes a wide (2×1) cell
+    const isWide = (i % 5 === 0) && (i > 0 || n > 3);
+    const w = isWide ? 2 : 1;
+    const h = 1;
+    const { c, r } = findFree(w, h);
+    mark(c, r, w, h);
+    cells.push({ col: `${c}/${c+w}`, row: `${r}/${r+h}` });
+    if (r + h - 1 > maxRow) maxRow = r + h - 1;
+  }
+
+  return {
+    cols: `repeat(${NCOLS}, 1fr)`,
+    rows: `repeat(${maxRow}, ${rowHeight})`,
+    cells,
+  };
 }
 
 // ─── FONT LOADER ─────────────────────────────────────────────────────────────
@@ -171,23 +292,34 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
   const photos = slide.bentoPhotos || [];
   const font = theme?.font || "DM Sans";
   const n = photos.length;
-  const grid = getBentoGridTemplate(n);
-  const areas = getBentoAreas(n);
+
   if (n === 0) return (
-    <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}>
+    <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, boxSizing: "border-box" }}>
       <div style={{ fontSize: 40 }}>⊞</div>
       <p style={{ margin: 0, color: "#9ca3af", fontSize: 14, textAlign: "center", fontFamily: font }}>Ajoutez des photos dans le panneau de droite</p>
     </div>
   );
+
+  const { cols, rows, cells } = buildBentoLayout(n);
+  const gap = Math.max(4, 8 * scale);
+  const radius = Math.max(6, 14 * scale);
+  const titleFs = Math.max(14, 22 * scale);
+  const pad = Math.max(10, 14 * scale);
+
   return (
-    <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", padding: 16 * scale, gap: 10 * scale, boxSizing: "border-box" }}>
-      {slide.title && <p style={{ margin: 0, fontSize: 22 * scale, fontWeight: 800, textAlign: "center", color: theme?.textColor || "#1e1b4b", fontFamily: font, flexShrink: 0 }}>{slide.title}</p>}
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: grid.cols, gridTemplateRows: grid.rows, gap: 8 * scale, minHeight: 0 }}>
+    <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", padding: pad, gap: Math.max(6, 10 * scale), boxSizing: "border-box", overflow: "hidden" }}>
+      {slide.title && (
+        <p style={{ margin: 0, fontSize: titleFs, fontWeight: 800, textAlign: "center", color: theme?.textColor || "#1e1b4b", fontFamily: font, flexShrink: 0, lineHeight: 1.2 }}>{slide.title}</p>
+      )}
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: cols, gridTemplateRows: rows, gap, minHeight: 0, overflow: "hidden" }}>
         {photos.map((photo, i) => {
-          const area = areas[i] || { gridArea: "auto" };
+          const cell = cells[i];
+          if (!cell) return null;
           return (
-            <div key={photo.id} style={{ gridArea: area.gridArea, overflow: "hidden", borderRadius: 12 * scale, background: "#f3f4f6" }}>
-              {photo.src && <img src={photo.src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+            <div key={photo.id} style={{ gridColumn: cell.col, gridRow: cell.row, overflow: "hidden", borderRadius: radius, background: "#e5e7eb", position: "relative" }}>
+              {photo.src && (
+                <img src={photo.src} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              )}
             </div>
           );
         })}
@@ -200,11 +332,13 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
 function BentoEditor({ slide, onUpdateSlide }) {
   const fileRef = useRef();
   const photos = slide.bentoPhotos || [];
+
   const addPhotos = (files) => {
     const readers = Array.from(files).map(f => new Promise(res => {
       const r = new FileReader(); r.onload = e => res({ id: uid(), src: e.target.result }); r.readAsDataURL(f);
     }));
-    Promise.all(readers).then(newPhotos => onUpdateSlide({ bentoPhotos: [...photos, ...newPhotos].slice(0, 8) }));
+    // No limit — add all
+    Promise.all(readers).then(newPhotos => onUpdateSlide({ bentoPhotos: [...photos, ...newPhotos] }));
   };
   const removePhoto = (id) => onUpdateSlide({ bentoPhotos: photos.filter(p => p.id !== id) });
   const movePhoto = (id, dir) => {
@@ -213,27 +347,37 @@ function BentoEditor({ slide, onUpdateSlide }) {
     [arr[i], arr[i + dir]] = [arr[i + dir], arr[i]];
     onUpdateSlide({ bentoPhotos: arr });
   };
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <p style={s.sectionLabel}>Photos bento ({photos.length}/8)</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <p style={s.sectionLabel}>Photos bento ({photos.length})</p>
         <button onClick={() => fileRef.current.click()} style={{ ...s.addBlockBtn, fontSize: 11 }}>+ Ajouter</button>
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
         onChange={e => { addPhotos(e.target.files); e.target.value = ""; }} />
-      {photos.length === 0 && <div style={{ ...s.uploadBtn, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", height: 80 }} onClick={() => fileRef.current.click()}>📷 Ajouter des photos</div>}
-      {photos.map((photo, i) => (
-        <div key={photo.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, background: "#f9fafb", borderRadius: 8, padding: "6px 8px" }}>
-          <img src={photo.src} alt="" style={{ width: 40, height: 32, objectFit: "cover", borderRadius: 5, flexShrink: 0 }} />
-          <span style={{ fontSize: 11, color: "#6b7280", flex: 1, fontWeight: 600 }}>Photo {i + 1}</span>
-          <div style={{ display: "flex", gap: 3 }}>
-            <button onClick={() => movePhoto(photo.id, -1)} style={s.moveBtn}>↑</button>
-            <button onClick={() => movePhoto(photo.id, 1)} style={s.moveBtn}>↓</button>
-            <button onClick={() => removePhoto(photo.id)} style={{ ...s.moveBtn, color: "#ef4444" }}>✕</button>
-          </div>
+      {photos.length === 0 && (
+        <div style={{ ...s.uploadBtn, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", height: 80, flexDirection: "column", gap: 6 }} onClick={() => fileRef.current.click()}>
+          <span style={{ fontSize: 22 }}>📷</span>
+          <span>Importer des photos</span>
         </div>
-      ))}
-      <p style={{ margin: "8px 0 0", fontSize: 11, color: "#9ca3af" }}>Max 8 photos. La grille s'adapte automatiquement.</p>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: photos.length ? 4 : 0 }}>
+        {photos.map((photo, i) => (
+          <div key={photo.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", background: "#f3f4f6" }}>
+            <img src={photo.src} alt="" style={{ width: "100%", height: 60, objectFit: "cover", display: "block" }} />
+            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0)", display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 3, gap: 2 }}>
+              <button onClick={() => movePhoto(photo.id, -1)} style={{ background: "rgba(0,0,0,0.5)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>↑</button>
+              <button onClick={() => movePhoto(photo.id, 1)} style={{ background: "rgba(0,0,0,0.5)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>↓</button>
+              <button onClick={() => removePhoto(photo.id)} style={{ background: "rgba(200,0,0,0.7)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>✕</button>
+            </div>
+            <div style={{ position: "absolute", bottom: 3, left: 5, fontSize: 10, color: "rgba(255,255,255,0.9)", fontWeight: 700, textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{i + 1}</div>
+          </div>
+        ))}
+      </div>
+      {photos.length > 0 && (
+        <p style={{ margin: "6px 0 0", fontSize: 10, color: "#9ca3af" }}>La grille bento s'adapte automatiquement au nombre de photos.</p>
+      )}
     </div>
   );
 }
