@@ -1097,7 +1097,7 @@ function Builder({ onPresent }) {
       if (e1) throw e1;
       for (let i = 0; i < slides.length; i++) {
         const sl = normalizeSlide(slides[i]);
-        const { error: e2 } = await supabase.from("slides").insert({ presentation_id: pres.id, position: i, title: sl.title, layout: sl.layout, columns: JSON.stringify(sl.columns || []), bento_photos: JSON.stringify(sl.bentoPhotos || []), blocks: "[]" });
+        const { error: e2 } = await supabase.from("slides").insert({ presentation_id: pres.id, position: i, title: sl.title, layout: sl.layout, hide_title: !!sl.hideTitle, columns: JSON.stringify(sl.columns || []), bento_photos: JSON.stringify(sl.bentoPhotos || []), blocks: "[]" });
         if (e2) console.error("slide insert:", e2);
       }
       const joinCode = makeJoinCode();
@@ -1257,7 +1257,7 @@ function PresentationLoader({ sessionId }) {
       const parseJ = (v) => Array.isArray(v) ? v : (() => { try { return JSON.parse(v); } catch { return []; } })();
       const normalize = (sl) => ({
         ...sl,
-        hideTitle: sl.hide_title,
+        hideTitle: !!sl.hide_title,
         layout: sl.layout || "single",
         columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })),
         bentoPhotos: parseJ(sl.bento_photos || "[]"),
