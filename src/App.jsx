@@ -710,19 +710,19 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
   const [voteCounts, setVoteCounts] = useState({});
   const [totalVotes, setTotalVotes] = useState(0);
   const [revealCorrect, setRevealCorrect] = useState(false);
-  const [revealResults, setRevealResults] = useState(false);
   const currentSlide = slides[currentIdx];
   const joinUrl = `${window.location.origin}${window.location.pathname}?join=${sessionCode}`;
 
   useEffect(() => {
     if (!sessionId) return;
-    setVoteCounts({}); setTotalVotes(0); setRevealCorrect(false); setRevealResults(false);
-    supabase.from("sessions").update({ current_slide_index: currentIdx, reveal_results: false, reveal_correct: false }).eq("id", sessionId).then();
+    setVoteCounts({}); setTotalVotes(0); setRevealCorrect(false);
+    // Results always visible — only correct answer is manually toggled
+    supabase.from("sessions").update({ current_slide_index: currentIdx, reveal_results: true, reveal_correct: false }).eq("id", sessionId).then();
   }, [currentIdx, sessionId]);
 
-  const syncReveal = useCallback(async (results, correct) => {
+  const syncReveal = useCallback(async (correct) => {
     if (!sessionId) return;
-    await supabase.from("sessions").update({ reveal_results: results, reveal_correct: correct }).eq("id", sessionId);
+    await supabase.from("sessions").update({ reveal_results: true, reveal_correct: correct }).eq("id", sessionId);
   }, [sessionId]);
 
   useEffect(() => {
@@ -738,8 +738,7 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
 
   const pollBlock = currentSlide?.columns?.flatMap(c => c.blocks || []).find(b => b.type === "poll");
   const go = (dir) => { const n = currentIdx + dir; if (n >= 0 && n < slides.length) setCurrentIdx(n); };
-  const handleRevealResults = () => { const next = !revealResults; setRevealResults(next); syncReveal(next, revealCorrect); };
-  const handleRevealCorrect = () => { const next = !revealCorrect; setRevealCorrect(next); syncReveal(revealResults, next); };
+  const handleRevealCorrect = () => { const next = !revealCorrect; setRevealCorrect(next); syncReveal(next); };
 
   useEffect(() => {
     const handler = (e) => {
@@ -767,14 +766,11 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {pollBlock && <>
-              <button onClick={handleRevealResults} style={{ ...s.presBtn, ...(revealResults ? { background: "rgba(99,102,241,0.3)", borderColor: "#818cf8", color: "#fff" } : {}) }}>
-                📊 {revealResults ? "Résultats visibles" : "Afficher résultats"}
-              </button>
+            {pollBlock && (
               <button onClick={handleRevealCorrect} style={{ ...s.presBtn, background: revealCorrect ? "#10b981" : "rgba(16,185,129,0.15)", borderColor: "#10b981", color: revealCorrect ? "#fff" : "#10b981" }}>
                 ✓ {revealCorrect ? "Réponse visible" : "Révéler réponse"}
               </button>
-            </>}
+            )}
             <span style={{ color: "#818cf8", fontSize: 14, fontWeight: 700, minWidth: 44, textAlign: "center" }}>{currentIdx + 1}/{slides.length}</span>
             <button onClick={() => go(-1)} disabled={currentIdx === 0} style={{ ...s.presBtn, opacity: currentIdx === 0 ? 0.3 : 1 }}>← Préc.</button>
             <button onClick={() => go(1)} disabled={currentIdx === slides.length - 1} style={{ ...s.presBtn, opacity: currentIdx === slides.length - 1 ? 0.3 : 1 }}>Suiv. →</button>
@@ -789,14 +785,11 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
       {/* MINI BAR — shown when top bar is hidden */}
       {barHidden && (
         <div style={{ position: "absolute", top: 10, right: 14, zIndex: 50, display: "flex", alignItems: "center", gap: 8 }}>
-          {pollBlock && <>
-            <button onClick={handleRevealResults} style={{ ...s.presBtn, ...(revealResults ? { background: "rgba(99,102,241,0.5)", borderColor: "#818cf8", color: "#fff" } : { background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)" }) }}>
-              📊 {revealResults ? "Résultats" : "Résultats"}
-            </button>
+          {pollBlock && (
             <button onClick={handleRevealCorrect} style={{ ...s.presBtn, background: revealCorrect ? "#10b981" : "rgba(30,27,75,0.75)", borderColor: "#10b981", color: revealCorrect ? "#fff" : "#10b981", backdropFilter: "blur(4px)" }}>
               ✓ {revealCorrect ? "Réponse visible" : "Réponse"}
             </button>
-          </>}
+          )}
           <button onClick={() => go(-1)} disabled={currentIdx === 0} style={{ ...s.presBtn, background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", opacity: currentIdx === 0 ? 0.3 : 1 }}>←</button>
           <button onClick={() => go(1)} disabled={currentIdx === slides.length - 1} style={{ ...s.presBtn, background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", opacity: currentIdx === slides.length - 1 ? 0.3 : 1 }}>→</button>
           <button onClick={() => setBarHidden(false)} style={{ background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", border: "1px solid rgba(129,140,248,0.3)", color: "#a5b4fc", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8 }}>
@@ -808,7 +801,7 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
       {/* SLIDE */}
       <div style={{ flex: 1, overflow: "hidden", padding: barHidden ? "12px 24px 10px" : "18px 40px 12px", display: "flex", alignItems: "stretch" }}>
         <div style={{ flex: 1, borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 48px rgba(0,0,0,0.45)" }}>
-          <SlideCanvas slide={currentSlide} theme={theme} scale={1.2} voteCounts={voteCounts} totalVotes={totalVotes} showCorrect={revealCorrect} revealed={revealResults} />
+          <SlideCanvas slide={currentSlide} theme={theme} scale={1.2} voteCounts={voteCounts} totalVotes={totalVotes} showCorrect={revealCorrect} revealed={true} />
         </div>
       </div>
 
