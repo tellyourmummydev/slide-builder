@@ -13,6 +13,47 @@ const POLL_PALETTE = ["#6366f1","#f59e0b","#10b981","#ef4444","#3b82f6","#ec4899
 const GOOGLE_FONTS = ["Inter","Roboto","Open Sans","Lato","Montserrat","Poppins","Raleway","Nunito","Oswald","Merriweather","Playfair Display","Lora","Source Sans 3","Ubuntu","Work Sans","Mulish","Quicksand","DM Sans","Space Grotesk","Outfit","Josefin Sans","Cabin","Karla","Jost","Barlow","Exo 2","Rubik","Manrope","Fira Sans","Noto Sans","PT Sans","Crimson Text","EB Garamond","Libre Baskerville","Cormorant Garamond","Spectral","Arvo","Bitter","Zilla Slab","Cardo","Dancing Script","Pacifico","Lobster","Caveat","Satisfy","Great Vibes","Bebas Neue","Anton","Righteous","Alfa Slab One"];
 
 const defaultTheme = () => ({ bgColor: "#ffffff", textColor: "#1e1b4b", accentColor: "#6366f1", secondaryBg: "#f5f3ff", pollBarBg: "#e5e7eb", font: "DM Sans" });
+
+// ─── IMAGE UPLOAD TO SUPABASE STORAGE ────────────────────────────────────────
+// Returns { url, error }. onProgress(0-100) called during upload.
+async function uploadImageToStorage(file, onProgress) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `slides/${uid()}.${ext}`;
+  onProgress(10);
+  // Supabase JS v2 doesn't expose upload progress natively,
+  // so we fake smooth progress while the XHR runs via fetch with a timer trick
+  let fakeProgress = 10;
+  const progressInterval = setInterval(() => {
+    fakeProgress = Math.min(fakeProgress + 8, 85);
+    onProgress(fakeProgress);
+  }, 200);
+  try {
+    const { data, error } = await supabase.storage
+      .from("slide-images")
+      .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type });
+    clearInterval(progressInterval);
+    if (error) { onProgress(0); return { url: null, error }; }
+    const { data: { publicUrl } } = supabase.storage.from("slide-images").getPublicUrl(path);
+    onProgress(100);
+    return { url: publicUrl, error: null };
+  } catch (err) {
+    clearInterval(progressInterval);
+    onProgress(0);
+    return { url: null, error: err };
+  }
+}
+
+// ─── UPLOAD PROGRESS BAR ─────────────────────────────────────────────────────
+function UploadProgress({ progress, label = "Upload en cours…" }) {
+  if (progress <= 0 || progress >= 100) return null;
+  return (
+    <div style={{ margin: "8px 0", background: "#f3f4f6", borderRadius: 8, overflow: "hidden", height: 28, display: "flex", alignItems: "center", gap: 10, padding: "0 10px", position: "relative" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${progress}%`, background: "linear-gradient(90deg, #6366f1, #818cf8)", transition: "width 0.2s ease", borderRadius: 8 }} />
+      <span style={{ position: "relative", fontSize: 11, fontWeight: 700, color: "#6366f1", zIndex: 1 }}>{label}</span>
+      <span style={{ position: "relative", fontSize: 11, fontWeight: 800, color: "#6366f1", zIndex: 1, marginLeft: "auto" }}>{Math.round(progress)}%</span>
+    </div>
+  );
+}
 const defaultBlock = (type) => {
   if (type === "text") return { id: uid(), type, content: "Votre texte ici...", fontSize: 24, align: "left", bold: false, italic: false, color: null, font: null };
   if (type === "image") return { id: uid(), type, src: null, caption: "" };
@@ -329,17 +370,31 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
 }
 
 // ─── BENTO EDITOR ─────────────────────────────────────────────────────────────
-function BentoEditor({ slide, onUpdateSlide }) {
+function BentoEditor({ slide, onUpdateSlide, onUploadStart, onUploadEnd }) {
   const fileRef = useRef();
   const photos = slide.bentoPhotos || [];
+  const [uploadProgresses, setUploadProgresses] = useState({});
 
-  const addPhotos = (files) => {
-    const readers = Array.from(files).map(f => new Promise(res => {
-      const r = new FileReader(); r.onload = e => res({ id: uid(), src: e.target.result }); r.readAsDataURL(f);
+  const addPhotos = async (files) => {
+    const fileArr = Array.from(files);
+    onUploadStart?.();
+    const tempIds = fileArr.map(() => uid());
+    setUploadProgresses(prev => { const n = { ...prev }; tempIds.forEach(id => { n[id] = 5; }); return n; });
+    const results = await Promise.all(fileArr.map(async (file, i) => {
+      const tempId = tempIds[i];
+      const { url, error } = await uploadImageToStorage(file, (p) => {
+        setUploadProgresses(prev => ({ ...prev, [tempId]: p }));
+      });
+      setUploadProgresses(prev => { const n = { ...prev }; delete n[tempId]; return n; });
+      if (error || !url) {
+        return new Promise(res => { const r = new FileReader(); r.onload = e => res({ id: uid(), src: e.target.result }); r.readAsDataURL(file); });
+      }
+      return { id: uid(), src: url };
     }));
-    // No limit — add all
-    Promise.all(readers).then(newPhotos => onUpdateSlide({ bentoPhotos: [...photos, ...newPhotos] }));
+    onUpdateSlide({ bentoPhotos: [...photos, ...results] });
+    onUploadEnd?.();
   };
+
   const removePhoto = (id) => onUpdateSlide({ bentoPhotos: photos.filter(p => p.id !== id) });
   const movePhoto = (id, dir) => {
     const arr = [...photos]; const i = arr.findIndex(p => p.id === id);
@@ -347,6 +402,8 @@ function BentoEditor({ slide, onUpdateSlide }) {
     [arr[i], arr[i + dir]] = [arr[i + dir], arr[i]];
     onUpdateSlide({ bentoPhotos: arr });
   };
+
+  const pending = Object.entries(uploadProgresses);
 
   return (
     <div>
@@ -356,17 +413,17 @@ function BentoEditor({ slide, onUpdateSlide }) {
       </div>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
         onChange={e => { addPhotos(e.target.files); e.target.value = ""; }} />
-      {photos.length === 0 && (
+      {pending.map(([id, p]) => <UploadProgress key={id} progress={p} label="Upload photo…" />)}
+      {photos.length === 0 && pending.length === 0 && (
         <div style={{ ...s.uploadBtn, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", height: 80, flexDirection: "column", gap: 6 }} onClick={() => fileRef.current.click()}>
-          <span style={{ fontSize: 22 }}>📷</span>
-          <span>Importer des photos</span>
+          <span style={{ fontSize: 22 }}>📷</span><span>Importer des photos</span>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: photos.length ? 4 : 0 }}>
         {photos.map((photo, i) => (
           <div key={photo.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", background: "#f3f4f6" }}>
             <img src={photo.src} alt="" style={{ width: "100%", height: 60, objectFit: "cover", display: "block" }} />
-            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0)", display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 3, gap: 2 }}>
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 3, gap: 2 }}>
               <button onClick={() => movePhoto(photo.id, -1)} style={{ background: "rgba(0,0,0,0.5)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>↑</button>
               <button onClick={() => movePhoto(photo.id, 1)} style={{ background: "rgba(0,0,0,0.5)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>↓</button>
               <button onClick={() => removePhoto(photo.id)} style={{ background: "rgba(200,0,0,0.7)", border: "none", color: "#fff", borderRadius: 4, cursor: "pointer", padding: "1px 5px", fontSize: 11, lineHeight: 1.4 }}>✕</button>
@@ -375,9 +432,7 @@ function BentoEditor({ slide, onUpdateSlide }) {
           </div>
         ))}
       </div>
-      {photos.length > 0 && (
-        <p style={{ margin: "6px 0 0", fontSize: 10, color: "#9ca3af" }}>La grille bento s'adapte automatiquement au nombre de photos.</p>
-      )}
+      {photos.length > 0 && <p style={{ margin: "6px 0 0", fontSize: 10, color: "#9ca3af" }}>La grille s'adapte automatiquement.</p>}
     </div>
   );
 }
@@ -435,8 +490,61 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
   );
 }
 
+// ─── IMAGE BLOCK EDITOR (with Supabase upload + progress) ────────────────────
+function ImageBlockEditor({ block, onChange, onDelete, onUploadStart, onUploadEnd }) {
+  const fileRef = useRef();
+  const [progress, setProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    setProgress(5);
+    onUploadStart?.();
+    const { url, error } = await uploadImageToStorage(file, (p) => setProgress(p));
+    setUploading(false);
+    if (error) {
+      console.error("Upload error:", error);
+      // Fallback to base64 if storage fails (e.g. bucket not configured yet)
+      const reader = new FileReader();
+      reader.onload = (ev) => { onChange({ src: ev.target.result }); setProgress(100); onUploadEnd?.(); };
+      reader.readAsDataURL(file);
+    } else {
+      onChange({ src: url });
+      setProgress(100);
+      onUploadEnd?.();
+    }
+    setTimeout(() => setProgress(0), 1500);
+  };
+
+  return (
+    <div style={s.blockEditor}>
+      <div style={s.blockEditorHeader}><span style={s.blockBadge}>Image</span><button onClick={onDelete} style={s.deleteBtn}>✕</button></div>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+      {uploading && <UploadProgress progress={progress} label="Upload de l'image…" />}
+      {!uploading && progress === 100 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "#d1fae5", borderRadius: 8, marginBottom: 6 }}>
+          <span style={{ color: "#10b981", fontWeight: 700, fontSize: 12 }}>✓ Image enregistrée</span>
+        </div>
+      )}
+      {block.src && !uploading ? (
+        <div style={{ position: "relative" }}>
+          <img src={block.src} alt="" style={{ width: "100%", borderRadius: 8, maxHeight: 110, objectFit: "cover", display: "block" }} />
+          <button onClick={() => onChange({ src: null })} style={{ position: "absolute", top: 5, right: 5, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 11 }}>✕</button>
+        </div>
+      ) : !uploading ? (
+        <button onClick={() => fileRef.current.click()} style={s.uploadBtn}>+ Choisir une image</button>
+      ) : null}
+      {block.src && (
+        <input value={block.caption} onChange={e => onChange({ caption: e.target.value })} placeholder="Légende (optionnel)" style={{ ...s.input, marginTop: 7, width: "100%", boxSizing: "border-box" }} />
+      )}
+    </div>
+  );
+}
+
 // ─── BLOCK EDITOR ─────────────────────────────────────────────────────────────
-function BlockEditor({ block, theme, onChange, onDelete }) {
+function BlockEditor({ block, theme, onChange, onDelete, onUploadStart, onUploadEnd }) {
   const fileRef = useRef();
   if (block.type === "text") return (
     <div style={s.blockEditor}>
@@ -461,13 +569,7 @@ function BlockEditor({ block, theme, onChange, onDelete }) {
     </div>
   );
   if (block.type === "image") return (
-    <div style={s.blockEditor}>
-      <div style={s.blockEditorHeader}><span style={s.blockBadge}>Image</span><button onClick={onDelete} style={s.deleteBtn}>✕</button></div>
-      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onChange({ src: ev.target.result }); r.readAsDataURL(f); }} />
-      {block.src ? <div style={{ position: "relative" }}><img src={block.src} alt="" style={{ width: "100%", borderRadius: 8, maxHeight: 110, objectFit: "cover" }} /><button onClick={() => onChange({ src: null })} style={{ position: "absolute", top: 5, right: 5, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", padding: "1px 6px", fontSize: 11 }}>✕</button></div>
-        : <button onClick={() => fileRef.current.click()} style={s.uploadBtn}>+ Choisir une image</button>}
-      <input value={block.caption} onChange={e => onChange({ caption: e.target.value })} placeholder="Légende (optionnel)" style={{ ...s.input, marginTop: 7, width: "100%", boxSizing: "border-box" }} />
-    </div>
+    <ImageBlockEditor block={block} onChange={onChange} onDelete={onDelete} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
   );
   if (block.type === "poll") return (
     <div style={s.blockEditor}>
@@ -498,7 +600,7 @@ function BlockEditor({ block, theme, onChange, onDelete }) {
 }
 
 // ─── COLUMN EDITOR ────────────────────────────────────────────────────────────
-function ColumnEditor({ column, colIndex, theme, onChange, activeBlockId, setActiveBlockId }) {
+function ColumnEditor({ column, colIndex, theme, onChange, activeBlockId, setActiveBlockId, onUploadStart, onUploadEnd }) {
   const addBlock = (type) => { const b = defaultBlock(type); onChange({ blocks: [...column.blocks, b] }); setActiveBlockId(b.id); };
   const updateBlock = (blockId, patch) => onChange({ blocks: column.blocks.map(b => b.id === blockId ? { ...b, ...patch } : b) });
   const deleteBlock = (blockId) => { onChange({ blocks: column.blocks.filter(b => b.id !== blockId) }); setActiveBlockId(null); };
@@ -531,7 +633,7 @@ function ColumnEditor({ column, colIndex, theme, onChange, activeBlockId, setAct
               <button onClick={e => { e.stopPropagation(); moveBlock(block.id, 1); }} style={s.moveBtn}>↓</button>
             </div>
           </div>
-          {block.id === activeBlockId && <BlockEditor block={block} theme={theme} onChange={p => updateBlock(block.id, p)} onDelete={() => deleteBlock(block.id)} />}
+          {block.id === activeBlockId && <BlockEditor block={block} theme={theme} onChange={p => updateBlock(block.id, p)} onDelete={() => deleteBlock(block.id)} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />}
         </div>
       ))}
     </div>
@@ -907,6 +1009,10 @@ function Builder({ onPresent }) {
   const [saveFlash, setSaveFlash] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [uploadsInProgress, setUploadsInProgress] = useState(0);
+
+  const onUploadStart = useCallback(() => setUploadsInProgress(n => n + 1), []);
+  const onUploadEnd = useCallback(() => setUploadsInProgress(n => Math.max(0, n - 1)), []);
 
   useEffect(() => { loadGoogleFont(theme.font); }, [theme.font]);
   useEffect(() => { try { localStorage.setItem("sb_autosave", JSON.stringify(slides)); } catch {} }, [slides]);
@@ -958,6 +1064,7 @@ function Builder({ onPresent }) {
   };
 
   const handlePresent = async () => {
+    if (uploadsInProgress > 0) return;
     try {
       const { data: pres, error: e1 } = await supabase.from("presentations").insert({ title: "Session " + new Date().toLocaleTimeString("fr-FR"), theme }).select().single();
       if (e1) throw e1;
@@ -969,7 +1076,11 @@ function Builder({ onPresent }) {
       const joinCode = makeJoinCode();
       const { data: sess, error: e3 } = await supabase.from("sessions").insert({ presentation_id: pres.id, join_code: joinCode, current_slide_index: 0, is_active: true, reveal_results: false, reveal_correct: false }).select().single();
       if (e3) throw e3;
-      onPresent({ slides: slides.map(normalizeSlide), theme, sessionCode: joinCode, sessionId: sess.id });
+      // Store presentation data in sessionStorage for the new tab to pick up
+      const presKey = `sb_present_${sess.id}`;
+      sessionStorage.setItem(presKey, JSON.stringify({ slides: slides.map(normalizeSlide), theme, sessionCode: joinCode, sessionId: sess.id }));
+      // Open presentation in new tab with a flag
+      window.open(`${window.location.pathname}?present=${sess.id}`, "_blank");
     } catch (err) { alert("Erreur Supabase : " + (err.message || JSON.stringify(err))); }
   };
 
@@ -985,7 +1096,11 @@ function Builder({ onPresent }) {
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={quickSave} style={{ ...s.headerBtn, ...(saveFlash ? { background: "rgba(16,185,129,0.2)", borderColor: "#10b981", color: "#10b981" } : {}) }}>{saveFlash ? "✓ Sauvegardé !" : "💾 Sauvegarder"}</button>
             <button onClick={() => setShowModal(true)} style={s.headerBtn}>📂 Gérer</button>
-            <button onClick={handlePresent} style={s.presentBtn}>▶ Présenter</button>
+            <button onClick={handlePresent} disabled={uploadsInProgress > 0}
+              style={{ ...s.presentBtn, ...(uploadsInProgress > 0 ? { opacity: 0.5, cursor: "not-allowed", background: "#9ca3af" } : {}) }}
+              title={uploadsInProgress > 0 ? `${uploadsInProgress} upload(s) en cours…` : "Lancer la présentation"}>
+              {uploadsInProgress > 0 ? `⏳ Upload (${uploadsInProgress})…` : "▶ Présenter"}
+            </button>
           </div>
         </div>
 
@@ -1024,14 +1139,14 @@ function Builder({ onPresent }) {
 
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 20px" }}>
               {normActive.layout === "bento" ? (
-                <BentoEditor slide={normActive} onUpdateSlide={(patch) => updateSlide(activeSlide.id, patch)} />
+                <BentoEditor slide={normActive} onUpdateSlide={(patch) => updateSlide(activeSlide.id, patch)} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
               ) : (
                 <div style={{ display: "flex", gap: 16 }}>
                   {normActive.columns.map((col, colIndex) => {
                     const split = LAYOUTS.find(l => l.id === normActive.layout)?.split;
                     return (
                       <div key={col.id} style={{ flex: split ? split[colIndex] : 1, minWidth: 0 }}>
-                        <ColumnEditor column={col} colIndex={colIndex} theme={theme} onChange={patch => updateColumn(activeSlide.id, col.id, patch)} activeBlockId={activeBlockId} setActiveBlockId={setActiveBlockId} />
+                        <ColumnEditor column={col} colIndex={colIndex} theme={theme} onChange={patch => updateColumn(activeSlide.id, col.id, patch)} activeBlockId={activeBlockId} setActiveBlockId={setActiveBlockId} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
                       </div>
                     );
                   })}
@@ -1071,11 +1186,47 @@ function Builder({ onPresent }) {
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const joinParam = params.get("join");
+  const presentParam = params.get("present");
+
+  // Participant view
   if (joinParam) return <JoinScreen initialCode={joinParam} />;
-  const [mode, setMode] = useState("builder");
-  const [presData, setPresData] = useState(null);
-  if (mode === "present" && presData) return <PresentationMode slides={presData.slides} theme={presData.theme} sessionCode={presData.sessionCode} sessionId={presData.sessionId} onExit={() => setMode("builder")} />;
-  return <Builder onPresent={(data) => { setPresData(data); setMode("present"); }} />;
+
+  // Presentation view opened in new tab
+  if (presentParam) {
+    const key = `sb_present_${presentParam}`;
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        return <PresentationMode slides={data.slides} theme={data.theme} sessionCode={data.sessionCode} sessionId={data.sessionId} onExit={() => window.close()} />;
+      } catch {}
+    }
+    // Fallback if sessionStorage not available (cross-origin new tab)
+    return <PresentationLoader sessionId={presentParam} />;
+  }
+
+  return <Builder onPresent={() => {}} />;
+}
+
+// Fallback loader if sessionStorage isn't shared (shouldn't happen same-origin)
+function PresentationLoader({ sessionId }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    (async () => {
+      const { data: sess } = await supabase.from("sessions").select("*, presentations(theme)").eq("id", sessionId).single();
+      if (!sess) { setError("Session introuvable"); return; }
+      const { data: slidesData } = await supabase.from("slides").select("*").eq("presentation_id", sess.presentation_id).order("position");
+      const normalize = (sl) => {
+        const parseJ = (v) => Array.isArray(v) ? v : (() => { try { return JSON.parse(v); } catch { return []; } })();
+        return { ...sl, layout: sl.layout || "single", columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })), bentoPhotos: parseJ(sl.bento_photos || "[]") };
+      };
+      setData({ slides: (slidesData || []).map(normalize), theme: sess.presentations?.theme || defaultTheme(), sessionCode: sess.join_code, sessionId: sess.id });
+    })();
+  }, [sessionId]);
+  if (error) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ef4444", fontFamily: "DM Sans, sans-serif" }}>{error}</div>;
+  if (!data) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "DM Sans, sans-serif" }}><div style={{ width: 40, height: 40, border: "4px solid #e0e7ff", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>;
+  return <PresentationMode slides={data.slides} theme={data.theme} sessionCode={data.sessionCode} sessionId={data.sessionId} onExit={() => window.close()} />;
 }
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
