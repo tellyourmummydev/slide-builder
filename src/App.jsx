@@ -1103,10 +1103,7 @@ function Builder({ onPresent }) {
       const joinCode = makeJoinCode();
       const { data: sess, error: e3 } = await supabase.from("sessions").insert({ presentation_id: pres.id, join_code: joinCode, current_slide_index: 0, is_active: true, reveal_results: false, reveal_correct: false }).select().single();
       if (e3) throw e3;
-      // Store presentation data in sessionStorage for the new tab to pick up
-      const presKey = `sb_present_${sess.id}`;
-      sessionStorage.setItem(presKey, JSON.stringify({ slides: slides.map(normalizeSlide), theme, sessionCode: joinCode, sessionId: sess.id }));
-      // Open presentation in new tab with a flag
+      // Open presentation in new tab — the tab loads everything fresh from Supabase
       window.open(`${window.location.pathname}?present=${sess.id}`, "_blank");
     } catch (err) { alert("Erreur Supabase : " + (err.message || JSON.stringify(err))); }
   };
@@ -1231,44 +1228,61 @@ export default function App() {
   const joinParam = params.get("join");
   const presentParam = params.get("present");
 
-  // Participant view
   if (joinParam) return <JoinScreen initialCode={joinParam} />;
-
-  // Presentation view opened in new tab
-  if (presentParam) {
-    const key = `sb_present_${presentParam}`;
-    const raw = sessionStorage.getItem(key);
-    if (raw) {
-      try {
-        const data = JSON.parse(raw);
-        return <PresentationMode slides={data.slides} theme={data.theme} sessionCode={data.sessionCode} sessionId={data.sessionId} onExit={() => window.close()} />;
-      } catch {}
-    }
-    // Fallback if sessionStorage not available (cross-origin new tab)
-    return <PresentationLoader sessionId={presentParam} />;
-  }
-
+  if (presentParam) return <PresentationLoader sessionId={presentParam} />;
   return <Builder onPresent={() => {}} />;
 }
 
-// Fallback loader if sessionStorage isn't shared (shouldn't happen same-origin)
+// Loads everything from Supabase — works in a fresh tab with no localStorage/sessionStorage
 function PresentationLoader({ sessionId }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+
   useEffect(() => {
     (async () => {
-      const { data: sess } = await supabase.from("sessions").select("*, presentations(theme)").eq("id", sessionId).single();
-      if (!sess) { setError("Session introuvable"); return; }
-      const { data: slidesData } = await supabase.from("slides").select("*").eq("presentation_id", sess.presentation_id).order("position");
-      const normalize = (sl) => {
-        const parseJ = (v) => Array.isArray(v) ? v : (() => { try { return JSON.parse(v); } catch { return []; } })();
-        return { ...sl, layout: sl.layout || "single", columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })), bentoPhotos: parseJ(sl.bento_photos || "[]") };
-      };
-      setData({ slides: (slidesData || []).map(normalize), theme: sess.presentations?.theme || defaultTheme(), sessionCode: sess.join_code, sessionId: sess.id });
+      const { data: sess, error: e1 } = await supabase
+        .from("sessions")
+        .select("id, join_code, presentation_id, current_slide_index, presentations(theme)")
+        .eq("id", sessionId)
+        .single();
+      if (e1 || !sess) { setError("Session introuvable."); return; }
+
+      const { data: slidesData, error: e2 } = await supabase
+        .from("slides")
+        .select("id, position, title, layout, columns, bento_photos, blocks, hide_title")
+        .eq("presentation_id", sess.presentation_id)
+        .order("position", { ascending: true });
+      if (e2) { setError("Impossible de charger les slides."); return; }
+
+      const parseJ = (v) => Array.isArray(v) ? v : (() => { try { return JSON.parse(v); } catch { return []; } })();
+      const normalize = (sl) => ({
+        ...sl,
+        hideTitle: sl.hide_title,
+        layout: sl.layout || "single",
+        columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })),
+        bentoPhotos: parseJ(sl.bento_photos || "[]"),
+      });
+
+      setData({
+        slides: (slidesData || []).map(normalize),
+        theme: sess.presentations?.theme || defaultTheme(),
+        sessionCode: sess.join_code,
+        sessionId: sess.id,
+      });
     })();
   }, [sessionId]);
-  if (error) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ef4444", fontFamily: "DM Sans, sans-serif" }}>{error}</div>;
-  if (!data) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "DM Sans, sans-serif" }}><div style={{ width: 40, height: 40, border: "4px solid #e0e7ff", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /></div>;
+
+  if (error) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ef4444", fontFamily: "DM Sans, sans-serif", fontSize: 16 }}>
+      {error}
+    </div>
+  );
+  if (!data) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "DM Sans, sans-serif", flexDirection: "column", gap: 16 }}>
+      <div style={{ width: 40, height: 40, border: "4px solid #e0e7ff", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <p style={{ color: "#818cf8", margin: 0, fontSize: 14 }}>Chargement de la présentation…</p>
+    </div>
+  );
   return <PresentationMode slides={data.slides} theme={data.theme} sessionCode={data.sessionCode} sessionId={data.sessionId} onExit={() => window.close()} />;
 }
 
