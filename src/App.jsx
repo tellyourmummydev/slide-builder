@@ -349,7 +349,7 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
 
   return (
     <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", padding: pad, gap: Math.max(6, 10 * scale), boxSizing: "border-box", overflow: "hidden" }}>
-      {slide.title && (
+      {slide.title && !slide.hideTitle && (
         <p style={{ margin: 0, fontSize: titleFs, fontWeight: 800, textAlign: "center", color: theme?.textColor || "#1e1b4b", fontFamily: font, flexShrink: 0, lineHeight: 1.2 }}>{slide.title}</p>
       )}
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: cols, gridTemplateRows: rows, gap, minHeight: 0, overflow: "hidden" }}>
@@ -453,7 +453,7 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
 
   return (
     <div style={{ background: theme?.bgColor || "#fff", height: "100%", display: "flex", flexDirection: "column", padding: 24 * scale, boxSizing: "border-box", fontFamily: font, overflow: "hidden" }}>
-      {slide.title && (
+      {slide.title && !slide.hideTitle && (
         <p style={{ margin: "0 0 14px", fontSize: 11 * scale, fontWeight: 700, color: theme?.accentColor || "#818cf8", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: font, flexShrink: 0 }}>{slide.title}</p>
       )}
       <div style={{ display: "flex", gap: 20 * scale, flex: 1, overflow: "hidden", minHeight: 0 }}>
@@ -463,22 +463,22 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
           const imgBlock = imageOnly ? col.blocks[0] : col.blocks.find(b => b.type === "image");
           const rest = col.blocks.filter(b => b !== imgBlock);
 
-          // Full-height image column
-          if (imageOnly && layout.cols === 2) return (
+          // Full-height image column: both single-column AND 2-column layouts
+          if (imageOnly) return (
             <div key={col.id} style={{ flex, minWidth: 0, position: "relative", borderRadius: 12 * scale, overflow: "hidden" }}>
               {imgBlock?.src
                 ? <img src={imgBlock.src} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                : <div style={{ width: "100%", height: "100%", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>📷</div>
+                : <div style={{ width: "100%", height: "100%", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 14 }}>📷</div>
               }
             </div>
           );
 
-          // Mixed column (image + blocks below or above)
+          // Mixed column (image + other blocks)
           return (
             <div key={col.id} style={{ flex, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 * scale, overflow: "hidden" }}>
               {col.blocks.map(block => (
-                <div key={block.id} style={{ flexShrink: block.type === "image" && rest.length === 0 ? 1 : 0, flex: block.type === "image" && rest.length === 0 ? 1 : "none", minHeight: 0, position: "relative" }}>
-                  <BlockRenderer block={block} theme={theme} scale={scale} fill={block.type === "image" && rest.length === 0 && layout.cols === 2}
+                <div key={block.id} style={{ flexShrink: 0, flex: "none", minHeight: 0, position: "relative" }}>
+                  <BlockRenderer block={block} theme={theme} scale={scale} fill={false}
                     voteCounts={block.type === "poll" ? voteCounts : {}} totalVotes={block.type === "poll" ? totalVotes : 0} showCorrect={showCorrect} revealed={revealed} />
                 </div>
               ))}
@@ -750,43 +750,70 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
     return () => window.removeEventListener("keydown", handler);
   }, [currentIdx, slides.length]);
 
+  const [barHidden, setBarHidden] = useState(false);
+
   return (
     <div style={{ fontFamily: theme?.font || "DM Sans", display: "flex", flexDirection: "column", height: "100vh", background: "#0f0e1a", overflow: "hidden" }}>
-      {/* TOP BAR — bigger */}
-      <div style={{ background: "#1e1b4b", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #312e81", flexShrink: 0, gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <QRCode value={joinUrl} size={88} />
-          <div>
-            <p style={{ margin: 0, fontSize: 11, color: "#a5b4fc", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rejoindre la session</p>
-            <p style={{ margin: "4px 0 5px", fontSize: 13, color: "#e0e7ff", fontFamily: "monospace" }}>{joinUrl}</p>
-            <span style={{ background: "#312e81", color: "#c7d2fe", padding: "4px 14px", borderRadius: 99, fontSize: 18, fontWeight: 900, letterSpacing: "0.18em" }}>{sessionCode}</span>
+
+      {/* TOP BAR — collapsible */}
+      {!barHidden && (
+        <div style={{ background: "#1e1b4b", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #312e81", flexShrink: 0, gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <QRCode value={joinUrl} size={88} />
+            <div>
+              <p style={{ margin: 0, fontSize: 11, color: "#a5b4fc", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rejoindre la session</p>
+              <p style={{ margin: "4px 0 5px", fontSize: 13, color: "#e0e7ff", fontFamily: "monospace" }}>{joinUrl}</p>
+              <span style={{ background: "#312e81", color: "#c7d2fe", padding: "4px 14px", borderRadius: 99, fontSize: 18, fontWeight: 900, letterSpacing: "0.18em" }}>{sessionCode}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {pollBlock && <>
+              <button onClick={handleRevealResults} style={{ ...s.presBtn, ...(revealResults ? { background: "rgba(99,102,241,0.3)", borderColor: "#818cf8", color: "#fff" } : {}) }}>
+                📊 {revealResults ? "Résultats visibles" : "Afficher résultats"}
+              </button>
+              <button onClick={handleRevealCorrect} style={{ ...s.presBtn, background: revealCorrect ? "#10b981" : "rgba(16,185,129,0.15)", borderColor: "#10b981", color: revealCorrect ? "#fff" : "#10b981" }}>
+                ✓ {revealCorrect ? "Réponse visible" : "Révéler réponse"}
+              </button>
+            </>}
+            <span style={{ color: "#818cf8", fontSize: 14, fontWeight: 700, minWidth: 44, textAlign: "center" }}>{currentIdx + 1}/{slides.length}</span>
+            <button onClick={() => go(-1)} disabled={currentIdx === 0} style={{ ...s.presBtn, opacity: currentIdx === 0 ? 0.3 : 1 }}>← Préc.</button>
+            <button onClick={() => go(1)} disabled={currentIdx === slides.length - 1} style={{ ...s.presBtn, opacity: currentIdx === slides.length - 1 ? 0.3 : 1 }}>Suiv. →</button>
+            <button onClick={onExit} style={{ ...s.presBtn, borderColor: "#f87171", color: "#f87171" }}>✕ Quitter</button>
+            <button onClick={() => setBarHidden(true)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "4px 6px", textDecoration: "underline" }}>
+              Masquer la barre
+            </button>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      )}
+
+      {/* MINI BAR — shown when top bar is hidden */}
+      {barHidden && (
+        <div style={{ position: "absolute", top: 10, right: 14, zIndex: 50, display: "flex", alignItems: "center", gap: 8 }}>
           {pollBlock && <>
-            <button onClick={handleRevealResults} style={{ ...s.presBtn, ...(revealResults ? { background: "rgba(99,102,241,0.3)", borderColor: "#818cf8", color: "#fff" } : {}) }}>
-              📊 {revealResults ? "Résultats visibles" : "Afficher résultats"}
+            <button onClick={handleRevealResults} style={{ ...s.presBtn, ...(revealResults ? { background: "rgba(99,102,241,0.5)", borderColor: "#818cf8", color: "#fff" } : { background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)" }) }}>
+              📊 {revealResults ? "Résultats" : "Résultats"}
             </button>
-            <button onClick={handleRevealCorrect} style={{ ...s.presBtn, background: revealCorrect ? "#10b981" : "rgba(16,185,129,0.15)", borderColor: "#10b981", color: revealCorrect ? "#fff" : "#10b981" }}>
-              ✓ {revealCorrect ? "Réponse visible" : "Révéler réponse"}
+            <button onClick={handleRevealCorrect} style={{ ...s.presBtn, background: revealCorrect ? "#10b981" : "rgba(30,27,75,0.75)", borderColor: "#10b981", color: revealCorrect ? "#fff" : "#10b981", backdropFilter: "blur(4px)" }}>
+              ✓ {revealCorrect ? "Réponse visible" : "Réponse"}
             </button>
           </>}
-          <span style={{ color: "#818cf8", fontSize: 14, fontWeight: 700, minWidth: 44, textAlign: "center" }}>{currentIdx + 1}/{slides.length}</span>
-          <button onClick={() => go(-1)} disabled={currentIdx === 0} style={{ ...s.presBtn, opacity: currentIdx === 0 ? 0.3 : 1 }}>← Préc.</button>
-          <button onClick={() => go(1)} disabled={currentIdx === slides.length - 1} style={{ ...s.presBtn, opacity: currentIdx === slides.length - 1 ? 0.3 : 1 }}>Suiv. →</button>
-          <button onClick={onExit} style={{ ...s.presBtn, borderColor: "#f87171", color: "#f87171" }}>✕ Quitter</button>
+          <button onClick={() => go(-1)} disabled={currentIdx === 0} style={{ ...s.presBtn, background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", opacity: currentIdx === 0 ? 0.3 : 1 }}>←</button>
+          <button onClick={() => go(1)} disabled={currentIdx === slides.length - 1} style={{ ...s.presBtn, background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", opacity: currentIdx === slides.length - 1 ? 0.3 : 1 }}>→</button>
+          <button onClick={() => setBarHidden(false)} style={{ background: "rgba(30,27,75,0.75)", backdropFilter: "blur(4px)", border: "1px solid rgba(129,140,248,0.3)", color: "#a5b4fc", cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8 }}>
+            Afficher la barre
+          </button>
         </div>
-      </div>
+      )}
 
       {/* SLIDE */}
-      <div style={{ flex: 1, overflow: "hidden", padding: "24px 40px 16px", display: "flex", alignItems: "stretch" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: barHidden ? "12px 24px 10px" : "18px 40px 12px", display: "flex", alignItems: "stretch" }}>
         <div style={{ flex: 1, borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 48px rgba(0,0,0,0.45)" }}>
           <SlideCanvas slide={currentSlide} theme={theme} scale={1.2} voteCounts={voteCounts} totalVotes={totalVotes} showCorrect={revealCorrect} revealed={revealResults} />
         </div>
       </div>
 
       {/* Dots */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "8px 0 14px" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "6px 0 12px" }}>
         {slides.map((sl, i) => <div key={sl.id} onClick={() => setCurrentIdx(i)} style={{ width: i === currentIdx ? 22 : 8, height: 8, borderRadius: 99, background: i === currentIdx ? "#818cf8" : "#312e81", cursor: "pointer", transition: "all 0.2s" }} />)}
       </div>
     </div>
@@ -1125,7 +1152,23 @@ function Builder({ onPresent }) {
           {/* EDITOR CENTER */}
           <div style={s.editorCenter}>
             <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid #f3f4f6", flexShrink: 0 }}>
-              <input value={normActive.title} onChange={e => updateSlide(activeSlide.id, { title: e.target.value })} style={s.slideTitleInput} placeholder="Titre de la slide" />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <input
+                  value={normActive.title}
+                  onChange={e => updateSlide(activeSlide.id, { title: e.target.value })}
+                  style={{ ...s.slideTitleInput, flex: 1, opacity: normActive.hideTitle ? 0.35 : 1 }}
+                  placeholder="Titre de la slide"
+                />
+                <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0, fontSize: 11, fontWeight: 700, color: normActive.hideTitle ? "#6366f1" : "#9ca3af", whiteSpace: "nowrap" }}>
+                  <input
+                    type="checkbox"
+                    checked={!!normActive.hideTitle}
+                    onChange={e => updateSlide(activeSlide.id, { hideTitle: e.target.checked })}
+                    style={{ cursor: "pointer" }}
+                  />
+                  Masquer
+                </label>
+              </div>
               <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", alignSelf: "center" }}>Layout :</span>
                 {LAYOUTS.map(layout => (
