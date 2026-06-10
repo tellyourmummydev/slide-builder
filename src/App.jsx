@@ -754,7 +754,9 @@ function ParticipantView({ joinCode }) {
         {!currentSlide && <p style={{ color: "#818cf8", textAlign: "center", marginTop: 40 }}>En attente…</p>}
         {currentSlide && (
           <>
-            <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: theme?.accentColor || "#818cf8", textTransform: "uppercase", letterSpacing: "0.08em" }}>{currentSlide.title}</p>
+            {currentSlide.title && !currentSlide.hideTitle && (
+              <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: theme?.accentColor || "#818cf8", textTransform: "uppercase", letterSpacing: "0.08em" }}>{currentSlide.title}</p>
+            )}
             {allBlocks.filter(b => b.type !== "poll").map(block => <div key={block.id} style={{ marginBottom: 14 }}><BlockRenderer block={block} theme={theme} scale={0.9} /></div>)}
             {poll && (
               <div>
