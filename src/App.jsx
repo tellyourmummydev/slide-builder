@@ -752,7 +752,7 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
   const [barHidden, setBarHidden] = useState(false);
 
   return (
-    <div style={{ fontFamily: theme?.font || "DM Sans", display: "flex", flexDirection: "column", height: "100vh", background: "#0f0e1a", overflow: "hidden" }}>
+    <div style={{ fontFamily: theme?.font || "DM Sans", display: "flex", flexDirection: "column", height: "100vh", background: theme?.bgColor || "#fff", overflow: "hidden", position: "relative" }}>
 
       {/* TOP BAR — collapsible */}
       {!barHidden && (
@@ -798,16 +798,16 @@ function PresentationMode({ slides, theme, sessionCode, sessionId, onExit }) {
         </div>
       )}
 
-      {/* SLIDE */}
-      <div style={{ flex: 1, overflow: "hidden", padding: barHidden ? "12px 24px 10px" : "18px 40px 12px", display: "flex", alignItems: "stretch" }}>
-        <div style={{ flex: 1, borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 48px rgba(0,0,0,0.45)" }}>
+      {/* SLIDE — full screen, no border/shadow */}
+      <div style={{ flex: 1, overflow: "hidden", padding: barHidden ? "0" : "0", display: "flex", alignItems: "stretch" }}>
+        <div style={{ flex: 1, overflow: "hidden" }}>
           <SlideCanvas slide={currentSlide} theme={theme} scale={1.2} voteCounts={voteCounts} totalVotes={totalVotes} showCorrect={revealCorrect} revealed={true} />
         </div>
       </div>
 
       {/* Dots */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "6px 0 12px" }}>
-        {slides.map((sl, i) => <div key={sl.id} onClick={() => setCurrentIdx(i)} style={{ width: i === currentIdx ? 22 : 8, height: 8, borderRadius: 99, background: i === currentIdx ? "#818cf8" : "#312e81", cursor: "pointer", transition: "all 0.2s" }} />)}
+      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6, zIndex: 10 }}>
+        {slides.map((sl, i) => <div key={sl.id} onClick={() => setCurrentIdx(i)} style={{ width: i === currentIdx ? 22 : 8, height: 8, borderRadius: 99, background: i === currentIdx ? "#818cf8" : "rgba(129,140,248,0.4)", cursor: "pointer", transition: "all 0.2s" }} />)}
       </div>
     </div>
   );
@@ -974,45 +974,114 @@ function JoinScreen({ initialCode = "" }) {
   );
 }
 
-// ─── SAVE/LOAD MODAL ─────────────────────────────────────────────────────────
+// Strip base64 images from slides before storing — only keep Supabase URLs
+function stripBase64(slides) {
+  return slides.map(sl => ({
+    ...sl,
+    bentoPhotos: (sl.bentoPhotos || []).map(p => ({
+      ...p,
+      src: p.src?.startsWith("data:") ? null : p.src,
+    })),
+    columns: (sl.columns || []).map(col => ({
+      ...col,
+      blocks: (col.blocks || []).map(b =>
+        b.type === "image" && b.src?.startsWith("data:") ? { ...b, src: null } : b
+      ),
+    })),
+  }));
+}
+
+function safeSave(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    // Quota exceeded — try clearing old autosave and retry
+    try {
+      localStorage.removeItem("sb_autosave");
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
 function SaveLoadModal({ slides, theme, onLoad, onClose }) {
   const [saved, setSaved] = useState([]);
   const [saveName, setSaveName] = useState("Ma présentation");
   const [tab, setTab] = useState("save");
-  useEffect(() => { try { const r = localStorage.getItem("sb_presentations"); setSaved(r ? JSON.parse(r) : []); } catch { setSaved([]); } }, []);
+  const [saveError, setSaveError] = useState(null);
+
+  useEffect(() => {
+    try { const r = localStorage.getItem("sb_presentations"); setSaved(r ? JSON.parse(r) : []); } catch { setSaved([]); }
+  }, []);
+
   const handleSave = () => {
-    const entry = { id: uid(), name: saveName, date: new Date().toISOString(), slides, theme };
-    const updated = [entry, ...saved].slice(0, 20);
-    localStorage.setItem("sb_presentations", JSON.stringify(updated)); setSaved(updated); setTab("load");
+    setSaveError(null);
+    const clean = stripBase64(slides);
+    const entry = { id: uid(), name: saveName.trim(), date: new Date().toISOString(), slides: clean, theme };
+    const updated = [entry, ...saved].slice(0, 30);
+    const ok = safeSave("sb_presentations", updated);
+    if (ok) { setSaved(updated); setTab("load"); }
+    else setSaveError("Stockage plein. Supprimez d'anciennes sauvegardes et réessayez.");
   };
-  const handleDelete = (id) => { const u = saved.filter(p => p.id !== id); localStorage.setItem("sb_presentations", JSON.stringify(u)); setSaved(u); };
+
+  const handleDelete = (id) => {
+    const u = saved.filter(p => p.id !== id);
+    safeSave("sb_presentations", u);
+    setSaved(u);
+  };
+
+  const handleNew = () => { onLoad([defaultSlide()], defaultTheme()); onClose(); };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 26, width: 450, maxWidth: "95vw", maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 26, width: 480, maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#1e1b4b" }}>Sauvegarder / Charger</h2>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#1e1b4b" }}>Mes présentations</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>✕</button>
         </div>
         <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "#f3f4f6", borderRadius: 10, padding: 4 }}>
-          {["save","load"].map(t => <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit", background: tab === t ? "#fff" : "transparent", color: tab === t ? "#6366f1" : "#6b7280" }}>{t === "save" ? "💾 Sauvegarder" : "📂 Charger"}</button>)}
-        </div>
-        {tab === "save" && <div>
-          <input value={saveName} onChange={e => setSaveName(e.target.value)} style={{ ...s.input, width: "100%", boxSizing: "border-box", fontSize: 15, marginBottom: 12 }} />
-          <button onClick={handleSave} disabled={!saveName.trim()} style={{ background: "#6366f1", border: "none", color: "#fff", padding: "11px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800, width: "100%", fontFamily: "inherit", opacity: !saveName.trim() ? 0.4 : 1 }}>💾 Sauvegarder</button>
-        </div>}
-        {tab === "load" && <div style={{ overflowY: "auto", flex: 1 }}>
-          {saved.length === 0 && <p style={{ color: "#9ca3af", textAlign: "center", fontSize: 13, padding: "20px 0" }}>Aucune sauvegarde</p>}
-          {saved.map(p => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid #f3f4f6" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: "#1e1b4b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
-                <p style={{ margin: "1px 0 0", fontSize: 11, color: "#9ca3af" }}>{p.slides?.length || 0} slides · {new Date(p.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
-              </div>
-              <button onClick={() => { onLoad(p.slides, p.theme); onClose(); }} style={{ background: "#ede9fe", border: "none", color: "#6366f1", padding: "5px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>Charger</button>
-              <button onClick={() => handleDelete(p.id)} style={{ background: "#fef2f2", border: "none", color: "#ef4444", padding: "5px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>✕</button>
-            </div>
+          {["save","load"].map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit", background: tab === t ? "#fff" : "transparent", color: tab === t ? "#6366f1" : "#6b7280" }}>
+              {t === "save" ? "💾 Sauvegarder" : `📂 Ouvrir (${saved.length})`}
+            </button>
           ))}
-        </div>}
+        </div>
+        {tab === "save" && (
+          <div>
+            <label style={{ ...s.sectionLabel, display: "block", marginBottom: 6 }}>Nom</label>
+            <input value={saveName} onChange={e => setSaveName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveName.trim() && handleSave()}
+              style={{ ...s.input, width: "100%", boxSizing: "border-box", fontSize: 15, marginBottom: 12 }} placeholder="Ma présentation" autoFocus />
+            {saveError && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", background: "#fef2f2", padding: "8px 12px", borderRadius: 8 }}>{saveError}</p>}
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: "#9ca3af" }}>{slides.length} slide{slides.length !== 1 ? "s" : ""} · Les images Supabase sont conservées.</p>
+            <button onClick={handleSave} disabled={!saveName.trim()} style={{ background: "#6366f1", border: "none", color: "#fff", padding: "11px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800, width: "100%", fontFamily: "inherit", opacity: !saveName.trim() ? 0.4 : 1 }}>
+              💾 Sauvegarder
+            </button>
+          </div>
+        )}
+        {tab === "load" && (
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            <button onClick={handleNew} style={{ width: "100%", marginBottom: 12, padding: "10px", background: "#f5f3ff", border: "2px dashed #818cf8", borderRadius: 10, cursor: "pointer", color: "#6366f1", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
+              + Nouvelle présentation vide
+            </button>
+            {saved.length === 0 && <p style={{ color: "#9ca3af", textAlign: "center", fontSize: 13, padding: "16px 0" }}>Aucune sauvegarde.</p>}
+            {saved.map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #f3f4f6" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#1e1b4b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9ca3af" }}>
+                    {p.slides?.length || 0} slide{(p.slides?.length || 0) !== 1 ? "s" : ""} · {new Date(p.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button onClick={() => { onLoad(p.slides, p.theme); onClose(); }} style={{ background: "#ede9fe", border: "none", color: "#6366f1", padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit", flexShrink: 0 }}>
+                  Ouvrir
+                </button>
+                <button onClick={() => handleDelete(p.id)} style={{ background: "#fef2f2", border: "none", color: "#ef4444", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1035,8 +1104,9 @@ function Builder({ onPresent }) {
   const onUploadEnd = useCallback(() => setUploadsInProgress(n => Math.max(0, n - 1)), []);
 
   useEffect(() => { loadGoogleFont(theme.font); }, [theme.font]);
-  useEffect(() => { try { localStorage.setItem("sb_autosave", JSON.stringify(slides)); } catch {} }, [slides]);
-  useEffect(() => { try { localStorage.setItem("sb_autosave_theme", JSON.stringify(theme)); } catch {} }, [theme]);
+  // Autosave on every change — strip base64 to avoid quota errors
+  useEffect(() => { safeSave("sb_autosave", stripBase64(slides)); }, [slides]);
+  useEffect(() => { safeSave("sb_autosave_theme", theme); }, [theme]);
 
   const normalizeSlide = useCallback((sl) => {
     if (sl.columns) return sl;
@@ -1075,12 +1145,13 @@ function Builder({ onPresent }) {
   };
 
   const quickSave = () => {
-    try {
-      const r = localStorage.getItem("sb_presentations");
-      const saved = r ? JSON.parse(r) : [];
-      localStorage.setItem("sb_presentations", JSON.stringify([{ id: uid(), name: `Sauvegarde ${new Date().toLocaleTimeString("fr-FR")}`, date: new Date().toISOString(), slides, theme }, ...saved].slice(0, 20)));
-      setSaveFlash(true); setTimeout(() => setSaveFlash(false), 2000);
-    } catch {}
+    const clean = stripBase64(slides);
+    const r = localStorage.getItem("sb_presentations");
+    const saved = r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : [];
+    const entry = { id: uid(), name: `Sauvegarde ${new Date().toLocaleTimeString("fr-FR")}`, date: new Date().toISOString(), slides: clean, theme };
+    const ok = safeSave("sb_presentations", [entry, ...saved].slice(0, 30));
+    if (ok) { setSaveFlash(true); setTimeout(() => setSaveFlash(false), 2500); }
+    else { alert("Stockage plein. Ouvrez '📂 Gérer' et supprimez d'anciennes sauvegardes."); }
   };
 
   const handlePresent = async () => {
