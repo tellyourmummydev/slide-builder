@@ -1006,107 +1006,169 @@ function safeSave(key, value) {
     }
   }
 }
-function SaveLoadModal({ slides, theme, onLoad, onClose }) {
-  const [saved, setSaved] = useState([]);
-  const [saveName, setSaveName] = useState("Ma présentation");
-  const [tab, setTab] = useState("save");
-  const [saveError, setSaveError] = useState(null);
 
-  useEffect(() => {
-    try { const r = localStorage.getItem("sb_presentations"); setSaved(r ? JSON.parse(r) : []); } catch { setSaved([]); }
-  }, []);
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function Dashboard({ onOpen }) {
+  const [presentations, setPresentations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
-  const handleSave = () => {
-    setSaveError(null);
-    const clean = stripBase64(slides);
-    const entry = { id: uid(), name: saveName.trim(), date: new Date().toISOString(), slides: clean, theme };
-    const updated = [entry, ...saved].slice(0, 30);
-    const ok = safeSave("sb_presentations", updated);
-    if (ok) { setSaved(updated); setTab("load"); }
-    else setSaveError("Stockage plein. Supprimez d'anciennes sauvegardes et réessayez.");
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("draft_presentations").select("id, title, updated_at").order("updated_at", { ascending: false });
+    setPresentations(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    const { data, error } = await supabase.from("draft_presentations")
+      .insert({ title: newName.trim(), slides_data: JSON.stringify([defaultSlide()]), theme_data: JSON.stringify(defaultTheme()) })
+      .select().single();
+    setCreating(false);
+    if (error) { alert("Erreur : " + error.message); return; }
+    setShowNew(false); setNewName("");
+    onOpen(data);
   };
 
-  const handleDelete = (id) => {
-    const u = saved.filter(p => p.id !== id);
-    safeSave("sb_presentations", u);
-    setSaved(u);
+  const handleDelete = async (e, id) => {
+    e.stopPropagation();
+    if (!confirm("Supprimer cette présentation ?")) return;
+    setDeleting(id);
+    await supabase.from("draft_presentations").delete().eq("id", id);
+    setPresentations(prev => prev.filter(p => p.id !== id));
+    setDeleting(null);
   };
 
-  const handleNew = () => { onLoad([defaultSlide()], defaultTheme()); onClose(); };
+  const fmt = (d) => new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 26, width: 480, maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#1e1b4b" }}>Mes présentations</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>✕</button>
+    <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", minHeight: "100vh", background: "#f8f9ff" }}>
+      <div style={{ background: "#1e1b4b", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={s.logo}>◈</div>
+          <span style={{ fontWeight: 800, fontSize: 20, color: "#fff", letterSpacing: "-0.02em" }}>SlideBuilder</span>
         </div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "#f3f4f6", borderRadius: 10, padding: 4 }}>
-          {["save","load"].map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit", background: tab === t ? "#fff" : "transparent", color: tab === t ? "#6366f1" : "#6b7280" }}>
-              {t === "save" ? "💾 Sauvegarder" : `📂 Ouvrir (${saved.length})`}
-            </button>
-          ))}
-        </div>
-        {tab === "save" && (
-          <div>
-            <label style={{ ...s.sectionLabel, display: "block", marginBottom: 6 }}>Nom</label>
-            <input value={saveName} onChange={e => setSaveName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveName.trim() && handleSave()}
-              style={{ ...s.input, width: "100%", boxSizing: "border-box", fontSize: 15, marginBottom: 12 }} placeholder="Ma présentation" autoFocus />
-            {saveError && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#ef4444", background: "#fef2f2", padding: "8px 12px", borderRadius: 8 }}>{saveError}</p>}
-            <p style={{ margin: "0 0 14px", fontSize: 12, color: "#9ca3af" }}>{slides.length} slide{slides.length !== 1 ? "s" : ""} · Les images Supabase sont conservées.</p>
-            <button onClick={handleSave} disabled={!saveName.trim()} style={{ background: "#6366f1", border: "none", color: "#fff", padding: "11px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800, width: "100%", fontFamily: "inherit", opacity: !saveName.trim() ? 0.4 : 1 }}>
-              💾 Sauvegarder
+        <button onClick={() => setShowNew(true)} style={{ background: "#6366f1", border: "none", color: "#fff", padding: "9px 22px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800, fontFamily: "inherit" }}>
+          + Nouvelle présentation
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px" }}>
+        <h1 style={{ margin: "0 0 6px", fontSize: 26, fontWeight: 800, color: "#1e1b4b" }}>Mes présentations</h1>
+        <p style={{ margin: "0 0 32px", fontSize: 14, color: "#9ca3af" }}>Créez et gérez vos présentations interactives.</p>
+
+        {loading && <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}><div style={s.spinner} /></div>}
+
+        {!loading && presentations.length === 0 && (
+          <div style={{ textAlign: "center", padding: "80px 0", background: "#fff", borderRadius: 20, border: "2px dashed #e0e7ff" }}>
+            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>◈</div>
+            <p style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700, color: "#1e1b4b" }}>Aucune présentation</p>
+            <p style={{ margin: "0 0 24px", fontSize: 14, color: "#9ca3af" }}>Créez votre première présentation interactive.</p>
+            <button onClick={() => setShowNew(true)} style={{ background: "#6366f1", border: "none", color: "#fff", padding: "12px 28px", borderRadius: 10, cursor: "pointer", fontSize: 15, fontWeight: 800, fontFamily: "inherit" }}>
+              + Nouvelle présentation
             </button>
           </div>
         )}
-        {tab === "load" && (
-          <div style={{ overflowY: "auto", flex: 1 }}>
-            <button onClick={handleNew} style={{ width: "100%", marginBottom: 12, padding: "10px", background: "#f5f3ff", border: "2px dashed #818cf8", borderRadius: 10, cursor: "pointer", color: "#6366f1", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
-              + Nouvelle présentation vide
-            </button>
-            {saved.length === 0 && <p style={{ color: "#9ca3af", textAlign: "center", fontSize: 13, padding: "16px 0" }}>Aucune sauvegarde.</p>}
-            {saved.map(p => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #f3f4f6" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#1e1b4b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9ca3af" }}>
-                    {p.slides?.length || 0} slide{(p.slides?.length || 0) !== 1 ? "s" : ""} · {new Date(p.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </p>
+
+        {!loading && presentations.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            {presentations.map(p => (
+              <div key={p.id} onClick={() => onOpen(p)} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e0e7ff", overflow: "hidden", boxShadow: "0 2px 12px rgba(99,102,241,0.06)", cursor: "pointer", transition: "box-shadow 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 20px rgba(99,102,241,0.16)"}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(99,102,241,0.06)"}>
+                <div style={{ height: 130, background: "linear-gradient(135deg, #ede9fe 0%, #dbeafe 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 40, opacity: 0.25 }}>◈</span>
                 </div>
-                <button onClick={() => { onLoad(p.slides, p.theme); onClose(); }} style={{ background: "#ede9fe", border: "none", color: "#6366f1", padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit", flexShrink: 0 }}>
-                  Ouvrir
-                </button>
-                <button onClick={() => handleDelete(p.id)} style={{ background: "#fef2f2", border: "none", color: "#ef4444", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>✕</button>
+                <div style={{ padding: "14px 16px 16px" }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 15, color: "#1e1b4b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</p>
+                  <p style={{ margin: "0 0 14px", fontSize: 11, color: "#9ca3af" }}>Modifié le {fmt(p.updated_at)}</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={e => { e.stopPropagation(); onOpen(p); }} style={{ flex: 1, background: "#6366f1", border: "none", color: "#fff", padding: "8px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" }}>
+                      Ouvrir →
+                    </button>
+                    <button onClick={e => handleDelete(e, p.id)} disabled={deleting === p.id} style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#ef4444", padding: "8px 12px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: deleting === p.id ? 0.5 : 1 }}>
+                      {deleting === p.id ? "…" : "✕"}
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {showNew && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(30,27,75,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowNew(false)}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: 32, width: 420, maxWidth: "95vw" }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 800, color: "#1e1b4b" }}>Nouvelle présentation</h2>
+            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && newName.trim() && handleCreate()}
+              placeholder="Ex : Quiz Marketing Q2" style={{ ...s.input, width: "100%", boxSizing: "border-box", fontSize: 16, marginBottom: 20, padding: "10px 14px" }} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowNew(false)} style={{ flex: 1, background: "#f3f4f6", border: "none", color: "#6b7280", padding: "11px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: "inherit" }}>Annuler</button>
+              <button onClick={handleCreate} disabled={!newName.trim() || creating} style={{ flex: 2, background: "#6366f1", border: "none", color: "#fff", padding: "11px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 800, fontFamily: "inherit", opacity: !newName.trim() || creating ? 0.5 : 1 }}>
+                {creating ? "Création…" : "Créer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── BUILDER ─────────────────────────────────────────────────────────────────
-function Builder({ onPresent }) {
-  const [slides, setSlides] = useState(() => { try { const r = localStorage.getItem("sb_autosave"); if (r) { const p = JSON.parse(r); if (p?.length) return p; } } catch {} return [defaultSlide()]; });
-  const [theme, setTheme] = useState(() => { try { const r = localStorage.getItem("sb_autosave_theme"); if (r) return JSON.parse(r); } catch {} return defaultTheme(); });
-  const [activeSlideId, setActiveSlideId] = useState(() => slides[0]?.id);
+function Builder({ draftId, initialTitle, onBack }) {
+  const parseJ = (v) => { try { return typeof v === "string" ? JSON.parse(v) : v; } catch { return null; } };
+  const [slides, setSlides] = useState([defaultSlide()]);
+  const [theme, setTheme] = useState(defaultTheme());
+  const [title, setTitle] = useState(initialTitle || "Sans titre");
+  const [activeSlideId, setActiveSlideId] = useState(null);
   const [activeBlockId, setActiveBlockId] = useState(null);
   const [rightPanel, setRightPanel] = useState("preview");
-  const [showModal, setShowModal] = useState(false);
-  const [saveFlash, setSaveFlash] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("saved"); // "saved"|"saving"|"error"
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [uploadsInProgress, setUploadsInProgress] = useState(0);
+  const saveTimeout = useRef(null);
 
   const onUploadStart = useCallback(() => setUploadsInProgress(n => n + 1), []);
   const onUploadEnd = useCallback(() => setUploadsInProgress(n => Math.max(0, n - 1)), []);
 
+  // Load from Supabase on mount
+  useEffect(() => {
+    if (!draftId) return;
+    (async () => {
+      const { data } = await supabase.from("draft_presentations").select("title, slides_data, theme_data").eq("id", draftId).single();
+      if (!data) return;
+      const loadedSlides = parseJ(data.slides_data);
+      const loadedTheme = parseJ(data.theme_data);
+      if (loadedSlides?.length) { setSlides(loadedSlides); setActiveSlideId(loadedSlides[0].id); }
+      if (loadedTheme) setTheme(loadedTheme);
+      if (data.title) setTitle(data.title);
+    })();
+  }, [draftId]);
+
   useEffect(() => { loadGoogleFont(theme.font); }, [theme.font]);
-  // Autosave on every change — strip base64 to avoid quota errors
-  useEffect(() => { safeSave("sb_autosave", stripBase64(slides)); }, [slides]);
-  useEffect(() => { safeSave("sb_autosave_theme", theme); }, [theme]);
+
+  // Autosave debounced 1.5s
+  const saveToSupabase = useCallback((sl, th, ttl) => {
+    setSaveStatus("saving");
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(async () => {
+      const { error } = await supabase.from("draft_presentations").update({
+        title: ttl, slides_data: JSON.stringify(stripBase64(sl)), theme_data: JSON.stringify(th), updated_at: new Date().toISOString(),
+      }).eq("id", draftId);
+      setSaveStatus(error ? "error" : "saved");
+    }, 1500);
+  }, [draftId]);
+
+  useEffect(() => { if (draftId && slides.length) saveToSupabase(slides, theme, title); }, [slides, theme, title]);
 
   const normalizeSlide = useCallback((sl) => {
     if (sl.columns) return sl;
@@ -1120,44 +1182,29 @@ function Builder({ onPresent }) {
   const updateColumn = useCallback((slideId, colId, patch) => setSlides(prev => prev.map(s => s.id === slideId ? { ...s, columns: s.columns.map(c => c.id === colId ? { ...c, ...patch } : c) } : s)), []);
 
   const setLayout = (layoutId) => {
-    const layout = LAYOUTS.find(l => l.id === layoutId);
-    if (!layout) return;
+    const layout = LAYOUTS.find(l => l.id === layoutId); if (!layout) return;
     const cur = normalizeSlide(activeSlide);
     if (layoutId === "bento") { updateSlide(activeSlide.id, { layout: "bento", columns: [], bentoPhotos: cur.bentoPhotos || [] }); return; }
-    let columns;
-    if (layout.cols === 1) { const allBlocks = cur.columns.flatMap(c => c.blocks); columns = [{ id: cur.columns[0]?.id || uid(), blocks: allBlocks }]; }
-    else { columns = cur.columns.length >= 2 ? [cur.columns[0], cur.columns[1]] : [cur.columns[0] || { id: uid(), blocks: [] }, { id: uid(), blocks: [] }]; }
+    const columns = layout.cols === 1
+      ? [{ id: cur.columns[0]?.id || uid(), blocks: cur.columns.flatMap(c => c.blocks) }]
+      : cur.columns.length >= 2 ? [cur.columns[0], cur.columns[1]] : [cur.columns[0] || { id: uid(), blocks: [] }, { id: uid(), blocks: [] }];
     updateSlide(activeSlide.id, { layout: layoutId, columns });
   };
 
   const addSlide = () => { const sl = defaultSlide(); setSlides(p => [...p, sl]); setActiveSlideId(sl.id); setActiveBlockId(null); };
   const deleteSlide = (id) => { if (slides.length === 1) return; const r = slides.filter(s => s.id !== id); setSlides(r); if (activeSlideId === id) setActiveSlideId(r[0].id); };
-  const duplicateSlide = (sl) => { const newSl = { ...JSON.parse(JSON.stringify(sl)), id: uid() }; setSlides(prev => { const i = prev.findIndex(s => s.id === sl.id); const next = [...prev]; next.splice(i + 1, 0, newSl); return next; }); setActiveSlideId(newSl.id); };
+  const duplicateSlide = (sl) => { const n = { ...JSON.parse(JSON.stringify(sl)), id: uid() }; setSlides(prev => { const i = prev.findIndex(s => s.id === sl.id); const next = [...prev]; next.splice(i + 1, 0, n); return next; }); setActiveSlideId(n.id); };
 
-  // Drag & drop reorder
   const handleDrop = (dropIdx) => {
     if (dragIdx === null || dragIdx === dropIdx) { setDragIdx(null); setDragOverIdx(null); return; }
-    const next = [...slides];
-    const [moved] = next.splice(dragIdx, 1);
-    next.splice(dropIdx, 0, moved);
-    setSlides(next);
-    setDragIdx(null); setDragOverIdx(null);
-  };
-
-  const quickSave = () => {
-    const clean = stripBase64(slides);
-    const r = localStorage.getItem("sb_presentations");
-    const saved = r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : [];
-    const entry = { id: uid(), name: `Sauvegarde ${new Date().toLocaleTimeString("fr-FR")}`, date: new Date().toISOString(), slides: clean, theme };
-    const ok = safeSave("sb_presentations", [entry, ...saved].slice(0, 30));
-    if (ok) { setSaveFlash(true); setTimeout(() => setSaveFlash(false), 2500); }
-    else { alert("Stockage plein. Ouvrez '📂 Gérer' et supprimez d'anciennes sauvegardes."); }
+    const next = [...slides]; const [moved] = next.splice(dragIdx, 1); next.splice(dropIdx, 0, moved);
+    setSlides(next); setDragIdx(null); setDragOverIdx(null);
   };
 
   const handlePresent = async () => {
     if (uploadsInProgress > 0) return;
     try {
-      const { data: pres, error: e1 } = await supabase.from("presentations").insert({ title: "Session " + new Date().toLocaleTimeString("fr-FR"), theme }).select().single();
+      const { data: pres, error: e1 } = await supabase.from("presentations").insert({ title, theme }).select().single();
       if (e1) throw e1;
       for (let i = 0; i < slides.length; i++) {
         const sl = normalizeSlide(slides[i]);
@@ -1165,124 +1212,104 @@ function Builder({ onPresent }) {
         if (e2) console.error("slide insert:", e2);
       }
       const joinCode = makeJoinCode();
-      const { data: sess, error: e3 } = await supabase.from("sessions").insert({ presentation_id: pres.id, join_code: joinCode, current_slide_index: 0, is_active: true, reveal_results: false, reveal_correct: false }).select().single();
+      const { data: sess, error: e3 } = await supabase.from("sessions").insert({ presentation_id: pres.id, join_code: joinCode, current_slide_index: 0, is_active: true, reveal_results: true, reveal_correct: false }).select().single();
       if (e3) throw e3;
-      // Open presentation in new tab — the tab loads everything fresh from Supabase
       window.open(`${window.location.pathname}?present=${sess.id}`, "_blank");
     } catch (err) { alert("Erreur Supabase : " + (err.message || JSON.stringify(err))); }
   };
 
   return (
-    <>
-      {showModal && <SaveLoadModal slides={slides} theme={theme} onLoad={(sl, th) => { setSlides(sl); if (th) setTheme(th); setActiveSlideId(sl[0]?.id); setActiveBlockId(null); }} onClose={() => setShowModal(false)} />}
-      <div style={s.root}>
-        <div style={s.header}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={s.logo}>◈</div>
-            <span style={{ fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: "-0.02em" }}>SlideBuilder</span>
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={quickSave} style={{ ...s.headerBtn, ...(saveFlash ? { background: "rgba(16,185,129,0.2)", borderColor: "#10b981", color: "#10b981" } : {}) }}>{saveFlash ? "✓ Sauvegardé !" : "💾 Sauvegarder"}</button>
-            <button onClick={() => setShowModal(true)} style={s.headerBtn}>📂 Gérer</button>
-            <button onClick={handlePresent} disabled={uploadsInProgress > 0}
-              style={{ ...s.presentBtn, ...(uploadsInProgress > 0 ? { opacity: 0.5, cursor: "not-allowed", background: "#9ca3af" } : {}) }}
-              title={uploadsInProgress > 0 ? `${uploadsInProgress} upload(s) en cours…` : "Lancer la présentation"}>
-              {uploadsInProgress > 0 ? `⏳ Upload (${uploadsInProgress})…` : "▶ Présenter"}
-            </button>
-          </div>
+    <div style={s.root}>
+      <div style={s.header}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onBack} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#a5b4fc", padding: "5px 10px", borderRadius: 7, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>← Accueil</button>
+          <div style={s.logo}>◈</div>
+          <input value={title} onChange={e => setTitle(e.target.value)} style={{ background: "transparent", border: "none", outline: "none", color: "#fff", fontWeight: 800, fontSize: 16, fontFamily: "inherit", minWidth: 120, maxWidth: 280 }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: saveStatus === "error" ? "#ef4444" : saveStatus === "saving" ? "#9ca3af" : "#10b981" }}>
+            {saveStatus === "saving" ? "💾 Enregistrement…" : saveStatus === "error" ? "⚠ Erreur" : "✓ Sauvegardé"}
+          </span>
+          <button onClick={handlePresent} disabled={uploadsInProgress > 0}
+            style={{ ...s.presentBtn, ...(uploadsInProgress > 0 ? { opacity: 0.5, cursor: "not-allowed", background: "#9ca3af" } : {}) }}>
+            {uploadsInProgress > 0 ? `⏳ Upload (${uploadsInProgress})…` : "▶ Présenter"}
+          </button>
+        </div>
+      </div>
+
+      <div style={s.workspace}>
+        <div style={s.sidebarLeft}>
+          <p style={s.sidebarTitle}>Slides</p>
+          {slides.map((sl, i) => (
+            <SlideThumbnail key={sl.id} slide={sl} index={i} isActive={sl.id === activeSlide?.id}
+              onClick={() => { setActiveSlideId(sl.id); setActiveBlockId(null); }}
+              onDelete={() => deleteSlide(sl.id)} onDuplicate={() => duplicateSlide(sl)}
+              onDragStart={() => setDragIdx(i)} onDragOver={() => setDragOverIdx(i)} onDrop={() => handleDrop(i)}
+              isDragOver={dragOverIdx === i && dragIdx !== i} />
+          ))}
+          <button onClick={addSlide} style={s.addSlideBtn}>+ Nouvelle slide</button>
         </div>
 
-        <div style={s.workspace}>
-          {/* SLIDES SIDEBAR with drag & drop */}
-          <div style={s.sidebarLeft}>
-            <p style={s.sidebarTitle}>Slides</p>
-            {slides.map((sl, i) => (
-              <SlideThumbnail key={sl.id} slide={sl} index={i} isActive={sl.id === activeSlide.id}
-                onClick={() => { setActiveSlideId(sl.id); setActiveBlockId(null); }}
-                onDelete={() => deleteSlide(sl.id)}
-                onDuplicate={() => duplicateSlide(sl)}
-                onDragStart={() => setDragIdx(i)}
-                onDragOver={() => setDragOverIdx(i)}
-                onDrop={() => handleDrop(i)}
-                isDragOver={dragOverIdx === i && dragIdx !== i}
-              />
-            ))}
-            <button onClick={addSlide} style={s.addSlideBtn}>+ Nouvelle slide</button>
-          </div>
-
-          {/* EDITOR CENTER */}
-          <div style={s.editorCenter}>
-            <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid #f3f4f6", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <input
-                  value={normActive.title}
-                  onChange={e => updateSlide(activeSlide.id, { title: e.target.value })}
-                  style={{ ...s.slideTitleInput, flex: 1, opacity: normActive.hideTitle ? 0.35 : 1 }}
-                  placeholder="Titre de la slide"
-                />
-                <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0, fontSize: 11, fontWeight: 700, color: normActive.hideTitle ? "#6366f1" : "#9ca3af", whiteSpace: "nowrap" }}>
-                  <input
-                    type="checkbox"
-                    checked={!!normActive.hideTitle}
-                    onChange={e => updateSlide(activeSlide.id, { hideTitle: e.target.checked })}
-                    style={{ cursor: "pointer" }}
-                  />
-                  Masquer
-                </label>
-              </div>
-              <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", alignSelf: "center" }}>Layout :</span>
-                {LAYOUTS.map(layout => (
-                  <button key={layout.id} onClick={() => setLayout(layout.id)}
-                    style={{ ...s.addBlockBtn, padding: "3px 9px", fontSize: 11, background: normActive.layout === layout.id ? "#ede9fe" : "#f9f9f9", borderColor: normActive.layout === layout.id ? "#818cf8" : "#e0e7ff", color: normActive.layout === layout.id ? "#6366f1" : "#6b7280", fontWeight: normActive.layout === layout.id ? 700 : 400 }}>
-                    {layout.icon} {layout.label}
-                  </button>
-                ))}
-              </div>
+        <div style={s.editorCenter}>
+          <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid #f3f4f6", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <input value={normActive.title} onChange={e => updateSlide(activeSlide.id, { title: e.target.value })}
+                style={{ ...s.slideTitleInput, flex: 1, opacity: normActive.hideTitle ? 0.35 : 1 }} placeholder="Titre de la slide" />
+              <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0, fontSize: 11, fontWeight: 700, color: normActive.hideTitle ? "#6366f1" : "#9ca3af", whiteSpace: "nowrap" }}>
+                <input type="checkbox" checked={!!normActive.hideTitle} onChange={e => updateSlide(activeSlide.id, { hideTitle: e.target.checked })} style={{ cursor: "pointer" }} />
+                Masquer
+              </label>
             </div>
-
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 20px" }}>
-              {normActive.layout === "bento" ? (
-                <BentoEditor slide={normActive} onUpdateSlide={(patch) => updateSlide(activeSlide.id, patch)} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
-              ) : (
-                <div style={{ display: "flex", gap: 16 }}>
-                  {normActive.columns.map((col, colIndex) => {
-                    const split = LAYOUTS.find(l => l.id === normActive.layout)?.split;
-                    return (
-                      <div key={col.id} style={{ flex: split ? split[colIndex] : 1, minWidth: 0 }}>
-                        <ColumnEditor column={col} colIndex={colIndex} theme={theme} onChange={patch => updateColumn(activeSlide.id, col.id, patch)} activeBlockId={activeBlockId} setActiveBlockId={setActiveBlockId} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT PANEL */}
-          <div style={s.previewPanel}>
-            <div style={{ display: "flex", gap: 3, marginBottom: 12, background: "#ede9fe", borderRadius: 10, padding: 3 }}>
-              {["preview","theme"].map(t => (
-                <button key={t} onClick={() => setRightPanel(t)} style={{ flex: 1, padding: "6px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", background: rightPanel === t ? "#fff" : "transparent", color: rightPanel === t ? "#6366f1" : "#7c6aab" }}>
-                  {t === "preview" ? "👁 Aperçu" : "🎨 Thème"}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", alignSelf: "center" }}>Layout :</span>
+              {LAYOUTS.map(layout => (
+                <button key={layout.id} onClick={() => setLayout(layout.id)}
+                  style={{ ...s.addBlockBtn, padding: "3px 9px", fontSize: 11, background: normActive.layout === layout.id ? "#ede9fe" : "#f9f9f9", borderColor: normActive.layout === layout.id ? "#818cf8" : "#e0e7ff", color: normActive.layout === layout.id ? "#6366f1" : "#6b7280", fontWeight: normActive.layout === layout.id ? 700 : 400 }}>
+                  {layout.icon} {layout.label}
                 </button>
               ))}
             </div>
-            {rightPanel === "preview" && (
-              <>
-                <div style={{ ...s.slideCanvas, aspectRatio: "16/9", overflow: "hidden" }}>
-                  <SlideCanvas slide={normActive} theme={theme} scale={0.6} />
-                </div>
-                <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 5 }}>
-                  {slides.map(sl => <div key={sl.id} onClick={() => { setActiveSlideId(sl.id); setActiveBlockId(null); }} style={{ width: 7, height: 7, borderRadius: "50%", cursor: "pointer", background: sl.id === activeSlide.id ? "#818cf8" : "#d1d5db" }} />)}
-                </div>
-              </>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px 20px" }}>
+            {normActive.layout === "bento" ? (
+              <BentoEditor slide={normActive} onUpdateSlide={patch => updateSlide(activeSlide.id, patch)} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
+            ) : (
+              <div style={{ display: "flex", gap: 16 }}>
+                {normActive.columns.map((col, ci) => {
+                  const split = LAYOUTS.find(l => l.id === normActive.layout)?.split;
+                  return (
+                    <div key={col.id} style={{ flex: split ? split[ci] : 1, minWidth: 0 }}>
+                      <ColumnEditor column={col} colIndex={ci} theme={theme} onChange={patch => updateColumn(activeSlide.id, col.id, patch)} activeBlockId={activeBlockId} setActiveBlockId={setActiveBlockId} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            {rightPanel === "theme" && <ThemeEditor theme={theme} onChange={setTheme} />}
           </div>
         </div>
+
+        <div style={s.previewPanel}>
+          <div style={{ display: "flex", gap: 3, marginBottom: 12, background: "#ede9fe", borderRadius: 10, padding: 3 }}>
+            {["preview","theme"].map(t => (
+              <button key={t} onClick={() => setRightPanel(t)} style={{ flex: 1, padding: "6px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", background: rightPanel === t ? "#fff" : "transparent", color: rightPanel === t ? "#6366f1" : "#7c6aab" }}>
+                {t === "preview" ? "👁 Aperçu" : "🎨 Thème"}
+              </button>
+            ))}
+          </div>
+          {rightPanel === "preview" && (
+            <>
+              <div style={{ ...s.slideCanvas, aspectRatio: "16/9", overflow: "hidden" }}>
+                <SlideCanvas slide={normActive} theme={theme} scale={0.6} />
+              </div>
+              <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 5 }}>
+                {slides.map(sl => <div key={sl.id} onClick={() => { setActiveSlideId(sl.id); setActiveBlockId(null); }} style={{ width: 7, height: 7, borderRadius: "50%", cursor: "pointer", background: sl.id === activeSlide?.id ? "#818cf8" : "#d1d5db" }} />)}
+              </div>
+            </>
+          )}
+          {rightPanel === "theme" && <ThemeEditor theme={theme} onChange={setTheme} />}
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1291,62 +1318,35 @@ export default function App() {
   const params = new URLSearchParams(window.location.search);
   const joinParam = params.get("join");
   const presentParam = params.get("present");
-
   if (joinParam) return <JoinScreen initialCode={joinParam} />;
   if (presentParam) return <PresentationLoader sessionId={presentParam} />;
-  return <Builder onPresent={() => {}} />;
+
+  const [view, setView] = useState("dashboard");
+  const [currentDraft, setCurrentDraft] = useState(null);
+  const openPresentation = (draft) => { setCurrentDraft(draft); setView("builder"); };
+  if (view === "builder" && currentDraft) {
+    return <Builder draftId={currentDraft.id} initialTitle={currentDraft.title} onBack={() => { setView("dashboard"); setCurrentDraft(null); }} />;
+  }
+  return <Dashboard onOpen={openPresentation} />;
 }
 
-// Loads everything from Supabase — works in a fresh tab with no localStorage/sessionStorage
+// ─── PRESENTATION LOADER (nouvel onglet) ─────────────────────────────────────
 function PresentationLoader({ sessionId }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-
   useEffect(() => {
     (async () => {
-      const { data: sess, error: e1 } = await supabase
-        .from("sessions")
-        .select("id, join_code, presentation_id, current_slide_index, presentations(theme)")
-        .eq("id", sessionId)
-        .single();
+      const { data: sess, error: e1 } = await supabase.from("sessions").select("id, join_code, presentation_id, current_slide_index, presentations(theme)").eq("id", sessionId).single();
       if (e1 || !sess) { setError("Session introuvable."); return; }
-
-      const { data: slidesData, error: e2 } = await supabase
-        .from("slides")
-        .select("id, position, title, layout, columns, bento_photos, blocks, hide_title")
-        .eq("presentation_id", sess.presentation_id)
-        .order("position", { ascending: true });
+      const { data: slidesData, error: e2 } = await supabase.from("slides").select("id, position, title, layout, columns, bento_photos, blocks, hide_title").eq("presentation_id", sess.presentation_id).order("position", { ascending: true });
       if (e2) { setError("Impossible de charger les slides."); return; }
-
       const parseJ = (v) => Array.isArray(v) ? v : (() => { try { return JSON.parse(v); } catch { return []; } })();
-      const normalize = (sl) => ({
-        ...sl,
-        hideTitle: !!sl.hide_title,
-        layout: sl.layout || "single",
-        columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })),
-        bentoPhotos: parseJ(sl.bento_photos || "[]"),
-      });
-
-      setData({
-        slides: (slidesData || []).map(normalize),
-        theme: sess.presentations?.theme || defaultTheme(),
-        sessionCode: sess.join_code,
-        sessionId: sess.id,
-      });
+      const normalize = (sl) => ({ ...sl, hideTitle: !!sl.hide_title, layout: sl.layout || "single", columns: parseJ(sl.columns).map(c => ({ ...c, blocks: parseJ(c.blocks) })), bentoPhotos: parseJ(sl.bento_photos || "[]") });
+      setData({ slides: (slidesData || []).map(normalize), theme: sess.presentations?.theme || defaultTheme(), sessionCode: sess.join_code, sessionId: sess.id });
     })();
   }, [sessionId]);
-
-  if (error) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ef4444", fontFamily: "DM Sans, sans-serif", fontSize: 16 }}>
-      {error}
-    </div>
-  );
-  if (!data) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "DM Sans, sans-serif", flexDirection: "column", gap: 16 }}>
-      <div style={{ width: 40, height: 40, border: "4px solid #e0e7ff", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-      <p style={{ color: "#818cf8", margin: 0, fontSize: 14 }}>Chargement de la présentation…</p>
-    </div>
-  );
+  if (error) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ef4444", fontFamily: "DM Sans,sans-serif", fontSize: 16 }}>{error}</div>;
+  if (!data) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "DM Sans,sans-serif", flexDirection: "column", gap: 16 }}><div style={{ width: 40, height: 40, border: "4px solid #e0e7ff", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><p style={{ color: "#818cf8", margin: 0, fontSize: 14 }}>Chargement…</p></div>;
   return <PresentationMode slides={data.slides} theme={data.theme} sessionCode={data.sessionCode} sessionId={data.sessionId} onExit={() => window.close()} />;
 }
 
