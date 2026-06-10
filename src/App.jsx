@@ -407,8 +407,14 @@ function BlockRenderer({ block, theme, scale = 1, fill = false, voteCounts, tota
     <p style={{ margin: 0, fontSize: block.fontSize * scale, textAlign: block.align, fontWeight: block.bold ? 700 : 400, fontStyle: block.italic ? "italic" : "normal", color: block.color || theme?.textColor || "#1e1b4b", lineHeight: 1.45, fontFamily: font, wordBreak: "break-word" }}>{block.content}</p>
   );
   if (block.type === "image") return block.src
-    ? <div style={{ ...(fill ? { position: "absolute", inset: 0 } : {}), display: "flex", alignItems: "stretch" }}>
-        <img src={block.src} alt={block.caption || ""} style={{ width: "100%", height: fill ? "100%" : "auto", ...(fill ? { objectFit: "cover", position: "absolute", inset: 0 } : { objectFit: "cover", borderRadius: 10 * scale, display: "block", maxHeight: fill ? "none" : 300 * scale }) }} />
+    ? <div style={{ ...(fill ? { position: "absolute", inset: 0 } : {}), display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <img src={block.src} alt={block.caption || ""} style={{
+          width: "100%",
+          height: fill ? "100%" : "auto",
+          ...(fill
+            ? { objectFit: "contain", position: "absolute", inset: 0 }
+            : { objectFit: "contain", borderRadius: 10 * scale, display: "block", maxHeight: 400 * scale })
+        }} />
         {block.caption && !fill && <p style={{ margin: "5px 0 0", fontSize: 11 * scale, color: "#6b7280", textAlign: "center", fontFamily: font }}>{block.caption}</p>}
       </div>
     : <div style={{ background: "#f3f4f6", borderRadius: 8, height: fill ? "100%" : 80, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 12 }}>📷 Aucune image</div>;
@@ -557,9 +563,9 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
 
           // Full-height image column: both single-column AND 2-column layouts
           if (imageOnly) return (
-            <div key={col.id} style={{ flex, minWidth: 0, position: "relative", borderRadius: 12 * scale, overflow: "hidden" }}>
+            <div key={col.id} style={{ flex, minWidth: 0, position: "relative", borderRadius: 12 * scale, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: theme?.bgColor || "#fff" }}>
               {imgBlock?.src
-                ? <img src={imgBlock.src} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                ? <img src={imgBlock.src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
                 : <div style={{ width: "100%", height: "100%", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 14 }}>📷</div>
               }
             </div>
