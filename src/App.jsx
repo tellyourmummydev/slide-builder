@@ -279,7 +279,38 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
   const hasImages = block.options.some(o => o.image);
   const n = block.options.length;
 
-  // Reveal animation: fade out bars, fade in winner
+  // Measure actual container height so we can compute pixel-accurate sizes
+  const containerRef = useRef(null);
+  const [containerH, setContainerH] = useState(0);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) setContainerH(e.contentRect.height);
+    });
+    ro.observe(containerRef.current);
+    setContainerH(containerRef.current.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, []);
+
+  // Compute sizes from real available height
+  // Layout per option: [label] + [bar+avatar] + gap between items
+  // Fixed overhead: question + small bottom margin
+  const GAP = 16; // fixed gap between option rows
+  const LABEL_TO_BAR = 4; // margin between label and bar
+  const questionH = qFontSize * 1.4 + 12; // approx question height + margin below
+  const availH = containerH > 0 ? Math.max(100, containerH - questionH) : 0;
+  const rowTotalH = availH > 0 ? Math.floor((availH - GAP * (n - 1)) / n) : 60;
+
+  // Within each row: bar takes a fixed ratio, label the rest
+  // imgSize ≤ rowTotalH - LABEL_TO_BAR - labelLineH
+  const labelLineH = Math.min(28, Math.max(14, Math.floor(rowTotalH * 0.28)));
+  const barAreaH = rowTotalH - labelLineH - LABEL_TO_BAR;
+  const imgSize = hasImages ? Math.min(Math.floor(barAreaH * 0.95), Math.floor(rowTotalH * 0.75)) : 0;
+  const barHeight = hasImages ? Math.max(16, Math.floor(imgSize * 0.55)) : Math.max(16, Math.floor(barAreaH * 0.85));
+  const labelFs = Math.min(22, Math.max(11, labelLineH - 4));
+  const halfImg = imgSize / 2;
+
+  // Reveal animation
   const [revealPhase, setRevealPhase] = useState(0);
   const prevShowCorrect = useRef(false);
   useEffect(() => {
@@ -293,22 +324,10 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
 
   const correctOpt = block.options.find(o => o.id === block.correctOptionId);
 
-  // --- Fluid sizing: scale everything to fill vertical space ---
-  // We use CSS flex to distribute space evenly.
-  // Fixed elements per option: label row + bar row.
-  // We size them proportionally: fewer options → bigger elements.
-  // Base sizes at n=4. Scale = clamp(4/n, 0.45, 1.8)
-  const scale = Math.min(1.8, Math.max(0.45, 4 / n));
-  const imgSize   = Math.round(68 * scale);
-  const barHeight = Math.round(52 * scale);
-  const labelFs   = Math.round(18 * scale);
-  const halfImg   = imgSize / 2;
-  const rowGap    = Math.round(10 * scale);
-
   // Winner reveal screen
   if (revealPhase === 2 && hasImages && correctOpt) {
     return (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, animation: "fadeIn 0.5s ease" }}>
+      <div ref={containerRef} style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, animation: "fadeIn 0.5s ease" }}>
         <p style={{ margin: 0, fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", textAlign: "center", fontFamily: font }}>{block.question}</p>
         {correctOpt.image && (
           <div style={{ width: 180, height: 180, borderRadius: "50%", overflow: "hidden", border: "5px solid #10b981", boxShadow: "0 0 0 8px rgba(16,185,129,0.15)", animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}>
@@ -325,12 +344,12 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
   }
 
   return (
-    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", opacity: revealPhase === 1 ? 0 : 1, transition: "opacity 0.5s ease" }}>
+    <div ref={containerRef} style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", opacity: revealPhase === 1 ? 0 : 1, transition: "opacity 0.5s ease" }}>
       {/* Question */}
-      <p style={{ margin: "0 0 8px", fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", lineHeight: 1.3, fontFamily: font, flexShrink: 0 }}>{block.question}</p>
+      <p style={{ margin: "0 0 8px", fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", lineHeight: 1.4, fontFamily: font, flexShrink: 0 }}>{block.question}</p>
 
-      {/* Options — each gets equal share of remaining vertical space, gap capped at 20px */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "min(20px, 2vh)", minHeight: 0 }}>
+      {/* Options — each is a fixed pixel height computed from containerH */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: GAP, minHeight: 0, overflow: "hidden" }}>
         {block.options.map((opt) => {
           const votes = voteCounts[opt.id] || 0;
           const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
@@ -340,34 +359,34 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
           if (showCorrect && isCorrect) barColor = "#10b981";
           if (showCorrect && isMyVote && !isCorrect && block.correctOptionId) barColor = "#ef4444";
           const barPct = showBars ? Math.max(pct, pct > 0 ? 1 : 0) : 0;
-          const avatarLeft = `calc(${halfImg}px + ${barPct / 100} * (100% - ${imgSize}px))`;
+          const avatarLeft = hasImages ? `calc(${halfImg}px + ${barPct / 100} * (100% - ${imgSize}px))` : "0%";
 
           return (
-            <div key={opt.id} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0 }}>
+            <div key={opt.id} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0, overflow: "hidden" }}>
               {/* Label */}
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: labelFs, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font, flexShrink: 0 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: Math.round(labelFs * 0.3) }}>
-                  {showCorrect && isCorrect && <span style={{ color: "#10b981" }}>✓</span>}
-                  {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444" }}>✗</span>}
-                  {isMyVote && <span style={{ fontSize: Math.round(labelFs * 0.65), background: barColor, color: "#fff", padding: "2px 7px", borderRadius: 99, fontWeight: 700 }}>Ton choix</span>}
-                  {opt.label}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: LABEL_TO_BAR, fontSize: labelFs, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font, flexShrink: 0, lineHeight: 1 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: Math.max(4, Math.round(labelFs * 0.3)), overflow: "hidden" }}>
+                  {showCorrect && isCorrect && <span style={{ color: "#10b981", flexShrink: 0 }}>✓</span>}
+                  {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444", flexShrink: 0 }}>✗</span>}
+                  {isMyVote && <span style={{ fontSize: Math.max(10, Math.round(labelFs * 0.7)), background: barColor, color: "#fff", padding: "1px 6px", borderRadius: 99, fontWeight: 700, flexShrink: 0 }}>Ton choix</span>}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
                 </span>
-                {showBars && <span style={{ color: barColor, fontWeight: 800 }}>{pct}%</span>}
+                {showBars && <span style={{ color: barColor, fontWeight: 800, flexShrink: 0, marginLeft: 8 }}>{pct}%</span>}
               </div>
 
               {/* Bar + avatar */}
-              <div style={{ position: "relative", height: hasImages ? imgSize + 8 : barHeight, flexShrink: 0 }}>
+              <div style={{ position: "relative", height: hasImages ? imgSize + 4 : barHeight, flexShrink: 0 }}>
                 <div style={{ position: "absolute", left: hasImages ? halfImg : 0, right: hasImages ? halfImg : 0, top: "50%", transform: "translateY(-50%)", height: barHeight, background: theme?.pollBarBg || "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ height: "100%", borderRadius: 99, background: barColor, width: `${barPct}%`, transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", paddingLeft: !hasImages && showBars && pct > 10 ? 12 : 0, boxSizing: "border-box" }}>
-                    {!hasImages && showBars && pct > 10 && <span style={{ color: "#fff", fontSize: Math.round(labelFs * 0.75), fontWeight: 700 }}>{votes}</span>}
+                  <div style={{ height: "100%", borderRadius: 99, background: barColor, width: `${barPct}%`, transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", paddingLeft: !hasImages && showBars && pct > 10 ? 10 : 0, boxSizing: "border-box" }}>
+                    {!hasImages && showBars && pct > 10 && <span style={{ color: "#fff", fontSize: Math.max(10, Math.round(labelFs * 0.75)), fontWeight: 700 }}>{votes}</span>}
                   </div>
                 </div>
                 {hasImages && (opt.image ? (
-                  <div style={{ position: "absolute", left: avatarLeft, top: "50%", transform: "translate(-50%,-50%)", transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)", width: imgSize, height: imgSize, borderRadius: "50%", overflow: "hidden", border: `${Math.max(2, Math.round(imgSize * 0.06))}px solid ${barColor}`, background: "#fff", boxShadow: "0 3px 14px rgba(0,0,0,0.22)", zIndex: 2 }}>
+                  <div style={{ position: "absolute", left: avatarLeft, top: "50%", transform: "translate(-50%,-50%)", transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)", width: imgSize, height: imgSize, borderRadius: "50%", overflow: "hidden", border: `${Math.max(2, Math.round(imgSize * 0.06))}px solid ${barColor}`, background: "#fff", boxShadow: "0 2px 10px rgba(0,0,0,0.2)", zIndex: 2 }}>
                     <img src={opt.image} alt={opt.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                   </div>
                 ) : (
-                  <div style={{ position: "absolute", left: avatarLeft, top: "50%", transform: "translate(-50%,-50%)", transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)", width: imgSize, height: imgSize, borderRadius: "50%", border: `${Math.max(2, Math.round(imgSize * 0.06))}px solid ${barColor}`, background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(imgSize * 0.3), color: "#9ca3af", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", zIndex: 2 }}>?</div>
+                  <div style={{ position: "absolute", left: avatarLeft, top: "50%", transform: "translate(-50%,-50%)", transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)", width: imgSize, height: imgSize, borderRadius: "50%", border: `${Math.max(2, Math.round(imgSize * 0.06))}px solid ${barColor}`, background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(imgSize * 0.3), color: "#9ca3af", zIndex: 2 }}>?</div>
                 ))}
               </div>
             </div>
@@ -375,7 +394,7 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
         })}
       </div>
 
-      {totalVotes > 0 && <p style={{ margin: "6px 0 0", fontSize: Math.round(labelFs * 0.65), color: "#9ca3af", textAlign: "right", fontFamily: font, flexShrink: 0 }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
+      {totalVotes > 0 && <p style={{ margin: "4px 0 0", fontSize: Math.max(10, Math.round(labelFs * 0.65)), color: "#9ca3af", textAlign: "right", fontFamily: font, flexShrink: 0 }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
     </div>
   );
 }
