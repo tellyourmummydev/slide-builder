@@ -326,31 +326,27 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
         if (showCorrect && isMyVote && !isCorrect && block.correctOptionId) barColor = "#ef4444";
 
         const barPct = showBars ? Math.max(pct, pct > 0 ? 1 : 0) : 0;
-        const imgSize = 34; // avatar diameter in px
+        const imgSize = 68; // avatar diameter in px (×2)
+        const barHeight = 52; // bar height in px (×2)
+        const labelFontSize = 18; // label font size in px (×2 from 14 → 18 is readable ×1.5, keeps it elegant)
         const halfImg = imgSize / 2;
-        // Clamp avatar so it never goes outside the track:
-        // at 0% → left edge flush, at 100% → right edge flush
-        // We add horizontal padding equal to halfImg on the container,
-        // and map barPct → within that padded track
-        // avatarLeft = halfImg + barPct% * (trackWidth - imgSize)
-        // In CSS: calc(halfImg + barPct * (100% - imgSize) / 100)
         const avatarLeft = `calc(${halfImg}px + ${barPct / 100} * (100% - ${imgSize}px))`;
 
         return (
-          <div key={opt.id} style={{ marginBottom: hasImages ? 14 : 10 }}>
+          <div key={opt.id} style={{ marginBottom: hasImages ? 22 : 16 }}>
             {/* Label row */}
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 14, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                {showCorrect && isCorrect && <span style={{ color: "#10b981" }}>✓</span>}
-                {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444" }}>✗</span>}
-                {isMyVote && <span style={{ fontSize: 10, background: barColor, color: "#fff", padding: "1px 6px", borderRadius: 99, fontWeight: 700 }}>Ton choix</span>}
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7, fontSize: labelFontSize, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                {showCorrect && isCorrect && <span style={{ color: "#10b981", fontSize: labelFontSize }}>✓</span>}
+                {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444", fontSize: labelFontSize }}>✗</span>}
+                {isMyVote && <span style={{ fontSize: 12, background: barColor, color: "#fff", padding: "2px 8px", borderRadius: 99, fontWeight: 700 }}>Ton choix</span>}
                 {opt.label}
               </span>
-              {showBars && <span style={{ color: barColor, fontWeight: 800 }}>{pct}%</span>}
+              {showBars && <span style={{ color: barColor, fontWeight: 800, fontSize: labelFontSize }}>{pct}%</span>}
             </div>
 
             {/* Bar + avatar container */}
-            <div style={{ position: "relative", height: hasImages ? imgSize + 8 : 26 }}>
+            <div style={{ position: "relative", height: hasImages ? imgSize + 12 : barHeight }}>
               {/* Track — inset by halfImg on each side so avatars never overflow */}
               <div style={{
                 position: "absolute",
@@ -358,12 +354,12 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                 right: hasImages ? halfImg : 0,
                 top: "50%",
                 transform: "translateY(-50%)",
-                height: 26,
+                height: barHeight,
                 background: theme?.pollBarBg || "#e5e7eb",
                 borderRadius: 99,
                 overflow: "hidden",
               }}>
-                {/* Fill — maps 0–100% within the inset track */}
+                {/* Fill */}
                 <div style={{
                   height: "100%",
                   borderRadius: 99,
@@ -371,11 +367,11 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                   width: `${barPct}%`,
                   transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)",
                   display: "flex", alignItems: "center",
-                  paddingLeft: !hasImages && showBars && pct > 10 ? 10 : 0,
+                  paddingLeft: !hasImages && showBars && pct > 10 ? 14 : 0,
                   boxSizing: "border-box",
                 }}>
                   {!hasImages && showBars && pct > 10 && (
-                    <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{votes}</span>
+                    <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>{votes}</span>
                   )}
                 </div>
               </div>
@@ -391,9 +387,9 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                   width: imgSize, height: imgSize,
                   borderRadius: "50%",
                   overflow: "hidden",
-                  border: `3px solid ${barColor}`,
+                  border: `4px solid ${barColor}`,
                   background: "#fff",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.22)",
+                  boxShadow: "0 3px 14px rgba(0,0,0,0.22)",
                   zIndex: 2,
                   flexShrink: 0,
                 }}>
@@ -408,11 +404,11 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                   transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)",
                   width: imgSize, height: imgSize,
                   borderRadius: "50%",
-                  border: `3px solid ${barColor}`,
+                  border: `4px solid ${barColor}`,
                   background: "#f3f4f6",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 12, color: "#9ca3af",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  fontSize: 18, color: "#9ca3af",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
                   zIndex: 2,
                 }}>?</div>
               ))}
