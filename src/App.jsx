@@ -327,10 +327,10 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", opacity: revealPhase === 1 ? 0 : 1, transition: "opacity 0.5s ease" }}>
       {/* Question */}
-      <p style={{ margin: `0 0 ${rowGap * 1.2}px`, fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", lineHeight: 1.3, fontFamily: font, flexShrink: 0 }}>{block.question}</p>
+      <p style={{ margin: "0 0 8px", fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", lineHeight: 1.3, fontFamily: font, flexShrink: 0 }}>{block.question}</p>
 
-      {/* Options — flex: 1 so they share remaining space equally */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: rowGap, minHeight: 0 }}>
+      {/* Options — each gets equal share of remaining vertical space, gap capped at 20px */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "min(20px, 2vh)", minHeight: 0 }}>
         {block.options.map((opt) => {
           const votes = voteCounts[opt.id] || 0;
           const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
@@ -343,10 +343,10 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
           const avatarLeft = `calc(${halfImg}px + ${barPct / 100} * (100% - ${imgSize}px))`;
 
           return (
-            <div key={opt.id} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", minHeight: 0 }}>
-              {/* Label row */}
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: Math.round(rowGap * 0.4), fontSize: labelFs, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font, flexShrink: 0 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: Math.round(labelFs * 0.35) }}>
+            <div key={opt.id} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0 }}>
+              {/* Label */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: labelFs, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font, flexShrink: 0 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: Math.round(labelFs * 0.3) }}>
                   {showCorrect && isCorrect && <span style={{ color: "#10b981" }}>✓</span>}
                   {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444" }}>✗</span>}
                   {isMyVote && <span style={{ fontSize: Math.round(labelFs * 0.65), background: barColor, color: "#fff", padding: "2px 7px", borderRadius: 99, fontWeight: 700 }}>Ton choix</span>}
@@ -357,28 +357,11 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
 
               {/* Bar + avatar */}
               <div style={{ position: "relative", height: hasImages ? imgSize + 8 : barHeight, flexShrink: 0 }}>
-                {/* Track */}
-                <div style={{
-                  position: "absolute",
-                  left: hasImages ? halfImg : 0,
-                  right: hasImages ? halfImg : 0,
-                  top: "50%", transform: "translateY(-50%)",
-                  height: barHeight,
-                  background: theme?.pollBarBg || "#e5e7eb",
-                  borderRadius: 99, overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%", borderRadius: 99, background: barColor,
-                    width: `${barPct}%`,
-                    transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)",
-                    display: "flex", alignItems: "center",
-                    paddingLeft: !hasImages && showBars && pct > 10 ? 12 : 0,
-                    boxSizing: "border-box",
-                  }}>
+                <div style={{ position: "absolute", left: hasImages ? halfImg : 0, right: hasImages ? halfImg : 0, top: "50%", transform: "translateY(-50%)", height: barHeight, background: theme?.pollBarBg || "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 99, background: barColor, width: `${barPct}%`, transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", paddingLeft: !hasImages && showBars && pct > 10 ? 12 : 0, boxSizing: "border-box" }}>
                     {!hasImages && showBars && pct > 10 && <span style={{ color: "#fff", fontSize: Math.round(labelFs * 0.75), fontWeight: 700 }}>{votes}</span>}
                   </div>
                 </div>
-                {/* Avatar */}
                 {hasImages && (opt.image ? (
                   <div style={{ position: "absolute", left: avatarLeft, top: "50%", transform: "translate(-50%,-50%)", transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)", width: imgSize, height: imgSize, borderRadius: "50%", overflow: "hidden", border: `${Math.max(2, Math.round(imgSize * 0.06))}px solid ${barColor}`, background: "#fff", boxShadow: "0 3px 14px rgba(0,0,0,0.22)", zIndex: 2 }}>
                     <img src={opt.image} alt={opt.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -392,7 +375,7 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
         })}
       </div>
 
-      {totalVotes > 0 && <p style={{ margin: `${rowGap}px 0 0`, fontSize: Math.round(labelFs * 0.65), color: "#9ca3af", textAlign: "right", fontFamily: font, flexShrink: 0 }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
+      {totalVotes > 0 && <p style={{ margin: "6px 0 0", fontSize: Math.round(labelFs * 0.65), color: "#9ca3af", textAlign: "right", fontFamily: font, flexShrink: 0 }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
     </div>
   );
 }
@@ -411,7 +394,7 @@ function BlockRenderer({ block, theme, scale = 1, fill = false, voteCounts, tota
       </div>
     : <div style={{ background: "#f3f4f6", borderRadius: 8, height: fill ? "100%" : 80, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 12 }}>📷 Aucune image</div>;
   if (block.type === "poll") return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <PollDisplay block={block} theme={theme} voteCounts={voteCounts} totalVotes={totalVotes} showCorrect={showCorrect} myVoteId={myVoteId} revealed={revealed} />
     </div>
   );
@@ -565,15 +548,14 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
 
           // Mixed column (image + other blocks)
           return (
-            <div key={col.id} style={{ flex, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 * scale, overflow: "hidden" }}>
+            <div key={col.id} style={{ flex, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 * scale, overflow: "hidden", height: "100%" }}>
               {col.blocks.map(block => (
                 <div key={block.id} style={{
-                  // Poll blocks stretch to fill remaining space; other blocks shrink to content
                   flex: block.type === "poll" ? 1 : "none",
                   flexShrink: block.type === "poll" ? 1 : 0,
-                  minHeight: 0, position: "relative",
-                  display: block.type === "poll" ? "flex" : "block",
-                  flexDirection: block.type === "poll" ? "column" : undefined,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
                 }}>
                   <BlockRenderer block={block} theme={theme} scale={scale} fill={false}
                     voteCounts={block.type === "poll" ? voteCounts : {}} totalVotes={block.type === "poll" ? totalVotes : 0} showCorrect={showCorrect} revealed={revealed} />
