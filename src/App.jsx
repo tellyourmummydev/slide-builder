@@ -407,15 +407,14 @@ function BlockRenderer({ block, theme, scale = 1, fill = false, voteCounts, tota
     <p style={{ margin: 0, fontSize: block.fontSize * scale, textAlign: block.align, fontWeight: block.bold ? 700 : 400, fontStyle: block.italic ? "italic" : "normal", color: block.color || theme?.textColor || "#1e1b4b", lineHeight: 1.45, fontFamily: font, wordBreak: "break-word" }}>{block.content}</p>
   );
   if (block.type === "image") return block.src
-    ? <div style={{ ...(fill ? { position: "absolute", inset: 0 } : {}), display: "flex", flexDirection: "column", alignItems: "center" }}>
+    ? <div style={{ ...(fill ? { position: "absolute", inset: 0 } : { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }), alignItems: "center", justifyContent: "center" }}>
         <img src={block.src} alt={block.caption || ""} style={{
-          width: "100%",
-          height: fill ? "100%" : "auto",
+          display: "block",
           ...(fill
-            ? { objectFit: "contain", position: "absolute", inset: 0 }
-            : { objectFit: "contain", borderRadius: 10 * scale, display: "block", maxHeight: 400 * scale })
+            ? { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }
+            : { width: "100%", height: "100%", objectFit: "contain", borderRadius: 10 * scale, flex: 1, minHeight: 0 })
         }} />
-        {block.caption && !fill && <p style={{ margin: "5px 0 0", fontSize: 11 * scale, color: "#6b7280", textAlign: "center", fontFamily: font }}>{block.caption}</p>}
+        {block.caption && !fill && <p style={{ margin: "5px 0 0", fontSize: 11 * scale, color: "#6b7280", textAlign: "center", fontFamily: font, flexShrink: 0 }}>{block.caption}</p>}
       </div>
     : <div style={{ background: "#f3f4f6", borderRadius: 8, height: fill ? "100%" : 80, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 12 }}>📷 Aucune image</div>;
   if (block.type === "poll") return (
@@ -440,6 +439,8 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
   );
 
   const { cols, rows, cells } = buildBentoLayout(n);
+  // Override rows to use fr units so grid fills all available height
+  const frRows = rows.replace(/\d+px/g, "1fr");
   const gap = Math.max(4, 8 * scale);
   const radius = Math.max(6, 14 * scale);
   const titleFs = Math.max(14, 22 * scale);
@@ -450,7 +451,7 @@ function BentoCanvas({ slide, theme, scale = 1 }) {
       {slide.title && !slide.hideTitle && (
         <p style={{ margin: 0, fontSize: titleFs, fontWeight: 800, textAlign: "center", color: theme?.textColor || "#1e1b4b", fontFamily: font, flexShrink: 0, lineHeight: 1.2 }}>{slide.title}</p>
       )}
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: cols, gridTemplateRows: rows, gap, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: cols, gridTemplateRows: frRows, gap, minHeight: 0 }}>
         {photos.map((photo, i) => {
           const cell = cells[i];
           if (!cell) return null;
@@ -576,8 +577,8 @@ function SlideCanvas({ slide, theme, scale = 1, voteCounts = {}, totalVotes = 0,
             <div key={col.id} style={{ flex, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 * scale, overflow: "hidden", height: "100%" }}>
               {col.blocks.map(block => (
                 <div key={block.id} style={{
-                  flex: block.type === "poll" ? 1 : "none",
-                  flexShrink: block.type === "poll" ? 1 : 0,
+                  flex: (block.type === "poll" || block.type === "image") ? 1 : "none",
+                  flexShrink: (block.type === "poll" || block.type === "image") ? 1 : 0,
                   minHeight: 0,
                   display: "flex",
                   flexDirection: "column",
