@@ -276,8 +276,45 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
   const showBars = showCorrect || revealed;
   const font = theme?.font || "DM Sans";
   const qFontSize = block.questionFontSize || 20;
+  const hasImages = block.options.some(o => o.image);
+
+  // Reveal animation: fade out bars, fade in winner
+  const [revealPhase, setRevealPhase] = useState(0); // 0=normal, 1=fading out, 2=winner shown
+  const prevShowCorrect = useRef(false);
+  useEffect(() => {
+    if (showCorrect && !prevShowCorrect.current && hasImages && block.correctOptionId) {
+      setRevealPhase(1);
+      setTimeout(() => setRevealPhase(2), 600);
+    }
+    if (!showCorrect && prevShowCorrect.current) {
+      setRevealPhase(0);
+    }
+    prevShowCorrect.current = showCorrect;
+  }, [showCorrect, hasImages, block.correctOptionId]);
+
+  const correctOpt = block.options.find(o => o.id === block.correctOptionId);
+
+  // Winner reveal screen
+  if (revealPhase === 2 && hasImages && correctOpt) {
+    return (
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: "20px 0", animation: "fadeIn 0.5s ease" }}>
+        <p style={{ margin: 0, fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", textAlign: "center", fontFamily: font }}>{block.question}</p>
+        {correctOpt.image && (
+          <div style={{ width: 180, height: 180, borderRadius: "50%", overflow: "hidden", border: "5px solid #10b981", boxShadow: "0 0 0 8px rgba(16,185,129,0.15)", animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}>
+            <img src={correctOpt.image} alt={correctOpt.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "#10b981", fontSize: 28, fontWeight: 900 }}>✓</span>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 22, color: theme?.textColor || "#1e1b4b", textAlign: "center", fontFamily: font }}>{correctOpt.label}</p>
+        </div>
+        {totalVotes > 0 && <p style={{ margin: 0, fontSize: 12, color: "#9ca3af", fontFamily: font }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ width: "100%" }}>
+    <div style={{ width: "100%", opacity: revealPhase === 1 ? 0 : 1, transition: "opacity 0.5s ease" }}>
       <p style={{ margin: "0 0 14px", fontWeight: 700, fontSize: qFontSize, color: theme?.textColor || "#1e1b4b", lineHeight: 1.3, fontFamily: font }}>{block.question}</p>
       {block.options.map((opt) => {
         const votes = voteCounts[opt.id] || 0;
@@ -287,9 +324,14 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
         let barColor = block.color || theme?.accentColor || "#6366f1";
         if (showCorrect && isCorrect) barColor = "#10b981";
         if (showCorrect && isMyVote && !isCorrect && block.correctOptionId) barColor = "#ef4444";
+
+        const barPct = showBars ? Math.max(pct, pct > 0 ? 1 : 0) : 0;
+        const imgSize = 32; // avatar diameter in px
+
         return (
-          <div key={opt.id} style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font }}>
+          <div key={opt.id} style={{ marginBottom: hasImages ? 14 : 10 }}>
+            {/* Label row */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 14, fontWeight: 600, color: theme?.textColor || "#374151", alignItems: "center", fontFamily: font }}>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 {showCorrect && isCorrect && <span style={{ color: "#10b981" }}>✓</span>}
                 {showCorrect && isMyVote && !isCorrect && block.correctOptionId && <span style={{ color: "#ef4444" }}>✗</span>}
@@ -298,15 +340,72 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
               </span>
               {showBars && <span style={{ color: barColor, fontWeight: 800 }}>{pct}%</span>}
             </div>
-            <div style={{ background: theme?.pollBarBg || "#e5e7eb", borderRadius: 8, height: 26, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 8, background: barColor, width: showBars ? `${Math.max(pct, pct > 0 ? 1 : 0)}%` : "0%", transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", paddingLeft: showBars && pct > 10 ? 10 : 0 }}>
-                {showBars && pct > 10 && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{votes}</span>}
+
+            {/* Bar row — with optional avatar riding it */}
+            <div style={{ position: "relative", height: hasImages ? imgSize + 4 : 26 }}>
+              {/* Track */}
+              <div style={{ position: "absolute", left: 0, right: 0, top: hasImages ? "50%" : 0, transform: hasImages ? "translateY(-50%)" : "none", height: 26, background: theme?.pollBarBg || "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
+                {/* Fill */}
+                <div style={{
+                  height: "100%", borderRadius: 99,
+                  background: barColor,
+                  width: `${barPct}%`,
+                  minWidth: barPct > 0 ? (hasImages ? imgSize + 4 : 4) : 0,
+                  transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)",
+                  display: "flex", alignItems: "center",
+                  paddingRight: hasImages ? imgSize / 2 : 0,
+                  boxSizing: "border-box",
+                }} />
               </div>
+              {/* Vote count inside bar (when no images) */}
+              {!hasImages && showBars && pct > 10 && (
+                <div style={{ position: "absolute", left: `${barPct}%`, top: 0, height: 26, display: "flex", alignItems: "center", paddingLeft: 10, transform: "translateX(-100%)", pointerEvents: "none" }}>
+                  <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{votes}</span>
+                </div>
+              )}
+              {/* Avatar riding the bar */}
+              {hasImages && opt.image && (
+                <div style={{
+                  position: "absolute",
+                  left: `${barPct}%`,
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)",
+                  width: imgSize, height: imgSize,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  border: `3px solid ${barColor}`,
+                  background: "#fff",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                  zIndex: 2,
+                  flexShrink: 0,
+                }}>
+                  <img src={opt.image} alt={opt.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
+              )}
+              {/* Placeholder circle if no image yet but others have one */}
+              {hasImages && !opt.image && (
+                <div style={{
+                  position: "absolute",
+                  left: `${barPct}%`,
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)",
+                  width: imgSize, height: imgSize,
+                  borderRadius: "50%",
+                  border: `3px solid ${barColor}`,
+                  background: "#f3f4f6",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 13, color: "#9ca3af",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  zIndex: 2,
+                }}>?</div>
+              )}
             </div>
           </div>
         );
       })}
-      {totalVotes > 0 && <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9ca3af", textAlign: "right", fontFamily: font }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
+      {totalVotes > 0 && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#9ca3af", textAlign: "right", fontFamily: font }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</p>}
     </div>
   );
 }
@@ -543,6 +642,81 @@ function ImageBlockEditor({ block, onChange, onDelete, onUploadStart, onUploadEn
   );
 }
 
+// ─── POLL BLOCK EDITOR (with per-option image upload) ────────────────────────
+function PollBlockEditor({ block, theme, onChange, onDelete, onUploadStart, onUploadEnd }) {
+  const fileRefs = useRef({});
+  const [optUploading, setOptUploading] = useState({});
+  const [optProgress, setOptProgress] = useState({});
+
+  const handleOptImage = async (optId, file) => {
+    if (!file) return;
+    setOptUploading(prev => ({ ...prev, [optId]: true }));
+    setOptProgress(prev => ({ ...prev, [optId]: 5 }));
+    onUploadStart?.();
+    const { url, error } = await uploadImageToStorage(file, (p) => setOptProgress(prev => ({ ...prev, [optId]: p })));
+    onUploadEnd?.();
+    setOptUploading(prev => ({ ...prev, [optId]: false }));
+    if (!error && url) {
+      onChange({ options: block.options.map(o => o.id === optId ? { ...o, image: url } : o) });
+    } else {
+      // base64 fallback
+      const reader = new FileReader();
+      reader.onload = ev => onChange({ options: block.options.map(o => o.id === optId ? { ...o, image: ev.target.result } : o) });
+      reader.readAsDataURL(file);
+    }
+    setTimeout(() => setOptProgress(prev => { const n = { ...prev }; delete n[optId]; return n; }), 1500);
+  };
+
+  return (
+    <div style={s.blockEditor}>
+      <div style={s.blockEditorHeader}><span style={s.blockBadge}>Vote</span><button onClick={onDelete} style={s.deleteBtn}>✕</button></div>
+      <input value={block.question} onChange={e => onChange({ question: e.target.value })} placeholder="Question..." style={{ ...s.input, width: "100%", boxSizing: "border-box", fontWeight: 600, marginBottom: 8 }} />
+      <label style={{ ...s.label, marginBottom: 10 }}>
+        Taille de la question
+        <input type="number" value={block.questionFontSize || 20} min={12} max={60} onChange={e => onChange({ questionFontSize: Number(e.target.value) })} style={{ ...s.input, width: 72, marginTop: 4 }} />
+      </label>
+      <p style={s.sectionLabel}>Options</p>
+      {block.options.map((opt, i) => (
+        <div key={opt.id} style={{ marginBottom: 10, background: "#f9fafb", borderRadius: 10, padding: "8px 10px" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 11, color: "#9ca3af", minWidth: 16, fontWeight: 700 }}>{i + 1}.</span>
+            <input value={opt.label} onChange={e => onChange({ options: block.options.map(o => o.id === opt.id ? { ...o, label: e.target.value } : o) })} style={{ ...s.input, flex: 1 }} placeholder={`Option ${i + 1}`} />
+            <button onClick={() => onChange({ correctOptionId: block.correctOptionId === opt.id ? null : opt.id })} title="Bonne réponse"
+              style={{ width: 26, height: 26, borderRadius: "50%", border: "2px solid", borderColor: block.correctOptionId === opt.id ? "#10b981" : "#d1d5db", background: block.correctOptionId === opt.id ? "#10b981" : "transparent", color: block.correctOptionId === opt.id ? "#fff" : "#9ca3af", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</button>
+            {block.options.length > 2 && <button onClick={() => onChange({ options: block.options.filter(o => o.id !== opt.id) })} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 15 }}>✕</button>}
+          </div>
+          {/* Image per option */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input ref={el => fileRefs.current[opt.id] = el} type="file" accept="image/*" style={{ display: "none" }}
+              onChange={e => { handleOptImage(opt.id, e.target.files[0]); e.target.value = ""; }} />
+            {opt.image ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", border: "2px solid #e0e7ff", flexShrink: 0 }}>
+                  <img src={opt.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
+                <button onClick={() => fileRefs.current[opt.id]?.click()} style={{ fontSize: 11, color: "#6366f1", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Changer</button>
+                <button onClick={() => onChange({ options: block.options.map(o => o.id === opt.id ? { ...o, image: null } : o) })} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+              </div>
+            ) : optUploading[opt.id] ? (
+              <UploadProgress progress={optProgress[opt.id] || 0} label="Upload…" />
+            ) : (
+              <button onClick={() => fileRefs.current[opt.id]?.click()} style={{ fontSize: 11, color: "#818cf8", background: "#f0eeff", border: "1px dashed #c4b5fd", borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontWeight: 600 }}>
+                + Photo ronde
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+      <button onClick={() => onChange({ options: [...block.options, { id: uid(), label: `Option ${block.options.length + 1}`, image: null }] })} style={s.addOptionBtn}>+ Option</button>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>Couleur :</span>
+        {POLL_PALETTE.map(c => <div key={c} onClick={() => onChange({ color: c })} style={{ width: 19, height: 19, borderRadius: "50%", background: c, cursor: "pointer", border: block.color === c ? "3px solid #1e1b4b" : "2px solid transparent" }} />)}
+        <input type="color" value={block.color || "#6366f1"} onChange={e => onChange({ color: e.target.value })} style={{ width: 24, height: 24, border: "1px solid #e5e7eb", borderRadius: "50%", cursor: "pointer", padding: 2 }} />
+      </div>
+    </div>
+  );
+}
+
 // ─── BLOCK EDITOR ─────────────────────────────────────────────────────────────
 function BlockEditor({ block, theme, onChange, onDelete, onUploadStart, onUploadEnd }) {
   const fileRef = useRef();
@@ -572,30 +746,7 @@ function BlockEditor({ block, theme, onChange, onDelete, onUploadStart, onUpload
     <ImageBlockEditor block={block} onChange={onChange} onDelete={onDelete} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
   );
   if (block.type === "poll") return (
-    <div style={s.blockEditor}>
-      <div style={s.blockEditorHeader}><span style={s.blockBadge}>Vote</span><button onClick={onDelete} style={s.deleteBtn}>✕</button></div>
-      <input value={block.question} onChange={e => onChange({ question: e.target.value })} placeholder="Question..." style={{ ...s.input, width: "100%", boxSizing: "border-box", fontWeight: 600, marginBottom: 8 }} />
-      <label style={{ ...s.label, marginBottom: 10 }}>
-        Taille de la question
-        <input type="number" value={block.questionFontSize || 20} min={12} max={60} onChange={e => onChange({ questionFontSize: Number(e.target.value) })} style={{ ...s.input, width: 72, marginTop: 4 }} />
-      </label>
-      <p style={s.sectionLabel}>Options</p>
-      {block.options.map((opt, i) => (
-        <div key={opt.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 7 }}>
-          <span style={{ fontSize: 11, color: "#9ca3af", minWidth: 16, fontWeight: 700 }}>{i + 1}.</span>
-          <input value={opt.label} onChange={e => onChange({ options: block.options.map(o => o.id === opt.id ? { ...o, label: e.target.value } : o) })} style={{ ...s.input, flex: 1 }} placeholder={`Option ${i + 1}`} />
-          <button onClick={() => onChange({ correctOptionId: block.correctOptionId === opt.id ? null : opt.id })} title="Bonne réponse"
-            style={{ width: 26, height: 26, borderRadius: "50%", border: "2px solid", borderColor: block.correctOptionId === opt.id ? "#10b981" : "#d1d5db", background: block.correctOptionId === opt.id ? "#10b981" : "transparent", color: block.correctOptionId === opt.id ? "#fff" : "#9ca3af", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</button>
-          {block.options.length > 2 && <button onClick={() => onChange({ options: block.options.filter(o => o.id !== opt.id) })} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 15 }}>✕</button>}
-        </div>
-      ))}
-      <button onClick={() => onChange({ options: [...block.options, { id: uid(), label: `Option ${block.options.length + 1}` }] })} style={s.addOptionBtn}>+ Option</button>
-      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>Couleur :</span>
-        {POLL_PALETTE.map(c => <div key={c} onClick={() => onChange({ color: c })} style={{ width: 19, height: 19, borderRadius: "50%", background: c, cursor: "pointer", border: block.color === c ? "3px solid #1e1b4b" : "2px solid transparent" }} />)}
-        <input type="color" value={block.color || "#6366f1"} onChange={e => onChange({ color: e.target.value })} style={{ width: 24, height: 24, border: "1px solid #e5e7eb", borderRadius: "50%", cursor: "pointer", padding: 2 }} />
-      </div>
-    </div>
+    <PollBlockEditor block={block} theme={theme} onChange={onChange} onDelete={onDelete} onUploadStart={onUploadStart} onUploadEnd={onUploadEnd} />
   );
 }
 
