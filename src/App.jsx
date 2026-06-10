@@ -326,7 +326,15 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
         if (showCorrect && isMyVote && !isCorrect && block.correctOptionId) barColor = "#ef4444";
 
         const barPct = showBars ? Math.max(pct, pct > 0 ? 1 : 0) : 0;
-        const imgSize = 32; // avatar diameter in px
+        const imgSize = 34; // avatar diameter in px
+        const halfImg = imgSize / 2;
+        // Clamp avatar so it never goes outside the track:
+        // at 0% → left edge flush, at 100% → right edge flush
+        // We add horizontal padding equal to halfImg on the container,
+        // and map barPct → within that padded track
+        // avatarLeft = halfImg + barPct% * (trackWidth - imgSize)
+        // In CSS: calc(halfImg + barPct * (100% - imgSize) / 100)
+        const avatarLeft = `calc(${halfImg}px + ${barPct / 100} * (100% - ${imgSize}px))`;
 
         return (
           <div key={opt.id} style={{ marginBottom: hasImages ? 14 : 10 }}>
@@ -341,33 +349,42 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
               {showBars && <span style={{ color: barColor, fontWeight: 800 }}>{pct}%</span>}
             </div>
 
-            {/* Bar row — with optional avatar riding it */}
-            <div style={{ position: "relative", height: hasImages ? imgSize + 4 : 26 }}>
-              {/* Track */}
-              <div style={{ position: "absolute", left: 0, right: 0, top: hasImages ? "50%" : 0, transform: hasImages ? "translateY(-50%)" : "none", height: 26, background: theme?.pollBarBg || "#e5e7eb", borderRadius: 99, overflow: "hidden" }}>
-                {/* Fill */}
+            {/* Bar + avatar container */}
+            <div style={{ position: "relative", height: hasImages ? imgSize + 8 : 26 }}>
+              {/* Track — inset by halfImg on each side so avatars never overflow */}
+              <div style={{
+                position: "absolute",
+                left: hasImages ? halfImg : 0,
+                right: hasImages ? halfImg : 0,
+                top: "50%",
+                transform: "translateY(-50%)",
+                height: 26,
+                background: theme?.pollBarBg || "#e5e7eb",
+                borderRadius: 99,
+                overflow: "hidden",
+              }}>
+                {/* Fill — maps 0–100% within the inset track */}
                 <div style={{
-                  height: "100%", borderRadius: 99,
+                  height: "100%",
+                  borderRadius: 99,
                   background: barColor,
                   width: `${barPct}%`,
-                  minWidth: barPct > 0 ? (hasImages ? imgSize + 4 : 4) : 0,
                   transition: "width 0.7s cubic-bezier(0.4,0,0.2,1)",
                   display: "flex", alignItems: "center",
-                  paddingRight: hasImages ? imgSize / 2 : 0,
+                  paddingLeft: !hasImages && showBars && pct > 10 ? 10 : 0,
                   boxSizing: "border-box",
-                }} />
-              </div>
-              {/* Vote count inside bar (when no images) */}
-              {!hasImages && showBars && pct > 10 && (
-                <div style={{ position: "absolute", left: `${barPct}%`, top: 0, height: 26, display: "flex", alignItems: "center", paddingLeft: 10, transform: "translateX(-100%)", pointerEvents: "none" }}>
-                  <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{votes}</span>
+                }}>
+                  {!hasImages && showBars && pct > 10 && (
+                    <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{votes}</span>
+                  )}
                 </div>
-              )}
-              {/* Avatar riding the bar */}
-              {hasImages && opt.image && (
+              </div>
+
+              {/* Avatar — positioned across the full container width using calc() */}
+              {hasImages && (opt.image ? (
                 <div style={{
                   position: "absolute",
-                  left: `${barPct}%`,
+                  left: avatarLeft,
                   top: "50%",
                   transform: "translate(-50%, -50%)",
                   transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)",
@@ -376,18 +393,16 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                   overflow: "hidden",
                   border: `3px solid ${barColor}`,
                   background: "#fff",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.22)",
                   zIndex: 2,
                   flexShrink: 0,
                 }}>
                   <img src={opt.image} alt={opt.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 </div>
-              )}
-              {/* Placeholder circle if no image yet but others have one */}
-              {hasImages && !opt.image && (
+              ) : (
                 <div style={{
                   position: "absolute",
-                  left: `${barPct}%`,
+                  left: avatarLeft,
                   top: "50%",
                   transform: "translate(-50%, -50%)",
                   transition: "left 0.7s cubic-bezier(0.4,0,0.2,1)",
@@ -396,11 +411,11 @@ function PollDisplay({ block, theme, voteCounts = {}, totalVotes = 0, showCorrec
                   border: `3px solid ${barColor}`,
                   background: "#f3f4f6",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 13, color: "#9ca3af",
+                  fontSize: 12, color: "#9ca3af",
                   boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                   zIndex: 2,
                 }}>?</div>
-              )}
+              ))}
             </div>
           </div>
         );
